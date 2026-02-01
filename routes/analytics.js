@@ -3,13 +3,378 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const { body, query, validationResult } = require('express-validator');
 const advancedAnalyticsService = require('../services/advancedAnalyticsService');
-const analyticsService = require('../services/analyticsService');
-const budgetIntelligenceService = require('../services/budgetIntelligenceService');
-const budgetService = require('../services/budgetService');
+const gamificationService = require('../services/scoreService');
+const discoveryService = require('../services/discoveryService');
+const forecastingService = require('../services/forecastingService');
+const intelligenceService = require('../services/intelligenceService');
 const DataWarehouse = require('../models/DataWarehouse');
 const CustomDashboard = require('../models/CustomDashboard');
 const FinancialHealthScore = require('../models/FinancialHealthScore');
 const Budget = require('../models/Budget');
+
+// ========================
+// SUBSCRIPTION DETECTION & RUNWAY ROUTES (Issue #444)
+// ========================
+
+/**
+ * GET /api/analytics/subscriptions/discover
+ * Scan past transactions to detect subscription patterns
+ */
+router.get('/subscriptions/discover', auth, async (req, res) => {
+  try {
+    const discoveries = await discoveryService.discoverSubscriptions(req.user.id);
+
+    res.json({
+      success: true,
+      data: discoveries
+    });
+  } catch (error) {
+    console.error('Subscription discovery error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to scan for subscriptions'
+    });
+  }
+});
+
+/**
+ * POST /api/analytics/subscriptions/confirm
+ * Confirm detected subscription and add to recurring expenses
+ */
+router.post('/subscriptions/confirm', auth, [
+  body('merchantKey').notEmpty().isString()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    // Get current discoveries
+    const discoveries = await discoveryService.discoverSubscriptions(req.user.id);
+    const detection = discoveries.detected.find(d => d.merchantKey === req.body.merchantKey);
+
+    if (!detection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Detection not found or already confirmed'
+      });
+    }
+
+    const recurring = await discoveryService.confirmSubscription(req.user.id, detection);
+
+    res.json({
+      success: true,
+      message: 'Subscription confirmed and tracked',
+      data: recurring
+    });
+  } catch (error) {
+    console.error('Confirm subscription error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to confirm subscription'
+    });
+  }
+});
+
+/**
+ * POST /api/analytics/subscriptions/confirm-multiple
+ * Confirm multiple detected subscriptions at once
+ */
+router.post('/subscriptions/confirm-multiple', auth, [
+  body('merchantKeys').isArray({ min: 1 }),
+  body('merchantKeys.*').isString()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const discoveries = await discoveryService.discoverSubscriptions(req.user.id);
+    const results = await discoveryService.confirmMultiple(
+      req.user.id,
+      req.body.merchantKeys,
+      discoveries.detected
+    );
+
+    res.json({
+      success: true,
+      message: `Confirmed ${results.confirmed.length} subscriptions`,
+      data: results
+    });
+  } catch (error) {
+    console.error('Confirm multiple subscriptions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to confirm subscriptions'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/subscriptions/burn-rate
+ * Get subscription burn rate calculation
+ */
+router.get('/subscriptions/burn-rate', auth, async (req, res) => {
+  try {
+    const burnRate = await discoveryService.calculateBurnRate(req.user.id);
+
+    res.json({
+      success: true,
+      data: burnRate
+    });
+  } catch (error) {
+    console.error('Get burn rate error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to calculate burn rate'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/subscriptions/upcoming
+ * Get upcoming subscription charges
+ */
+router.get('/subscriptions/upcoming', auth, [
+  query('days').optional().isInt({ min: 1, max: 90 })
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const days = parseInt(req.query.days) || 30;
+    const upcoming = await discoveryService.getUpcomingCharges(req.user.id, days);
+
+    res.json({
+      success: true,
+      data: upcoming
+    });
+  } catch (error) {
+    console.error('Get upcoming charges error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get upcoming charges'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/runway
+ * Get financial runway calculation
+ */
+router.get('/runway', auth, async (req, res) => {
+  try {
+    const runway = await forecastingService.calculateRunway(req.user.id);
+
+    res.json({
+      success: true,
+      data: runway
+    });
+  } catch (error) {
+    console.error('Get runway error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to calculate runway'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/runway/summary
+ * Get runway summary for dashboard
+ */
+router.get('/runway/summary', auth, async (req, res) => {
+  try {
+    const summary = await forecastingService.getRunwaySummary(req.user.id);
+
+    res.json({
+      success: true,
+      data: summary
+    });
+  } catch (error) {
+    console.error('Get runway summary error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get runway summary'
+    });
+  }
+});
+
+// ========================
+// Gamification & Health Score Routes (Issue #421)
+// ========================
+
+/**
+ * GET /api/analytics/gamification/health-score
+ * Calculate and return complete Financial Health Score
+ */
+router.get('/gamification/health-score', auth, [
+  query('workspaceId').optional().isMongoId()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const healthScore = await gamificationService.calculateHealthScore(
+      req.user.id,
+      req.query.workspaceId
+    );
+
+    res.json({
+      success: true,
+      data: healthScore
+    });
+  } catch (error) {
+    console.error('Get gamification health score error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to calculate financial health score'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/gamification/profile
+ * Get user's gamification profile (level, XP, badges)
+ */
+router.get('/gamification/profile', auth, async (req, res) => {
+  try {
+    const profile = await gamificationService.getUserGamificationProfile(req.user.id);
+
+    res.json({
+      success: true,
+      data: profile
+    });
+  } catch (error) {
+    console.error('Get gamification profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get gamification profile'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/gamification/badges
+ * Get all available badges with user's progress
+ */
+router.get('/gamification/badges', auth, async (req, res) => {
+  try {
+    const badges = await gamificationService.getAllBadges(req.user.id);
+
+    res.json({
+      success: true,
+      data: badges
+    });
+  } catch (error) {
+    console.error('Get badges error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get badges'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/gamification/leaderboard
+ * Get community leaderboard
+ */
+router.get('/gamification/leaderboard', auth, [
+  query('limit').optional().isInt({ min: 5, max: 50 }),
+  query('type').optional().isIn(['points', 'health'])
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const limit = parseInt(req.query.limit) || 10;
+    const type = req.query.type || 'points';
+
+    const leaderboard = await gamificationService.getLeaderboard(limit, type);
+
+    res.json({
+      success: true,
+      data: leaderboard
+    });
+  } catch (error) {
+    console.error('Get leaderboard error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get leaderboard'
+    });
+  }
+});
+
+/**
+ * PUT /api/analytics/gamification/financial-profile
+ * Update user's financial profile for score calculation
+ */
+router.put('/gamification/financial-profile', auth, [
+  body('monthlyIncome').optional().isFloat({ min: 0 }),
+  body('monthlyDebtPayment').optional().isFloat({ min: 0 }),
+  body('emergencyFundTarget').optional().isFloat({ min: 0 }),
+  body('emergencyFundCurrent').optional().isFloat({ min: 0 })
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const profile = await gamificationService.updateFinancialProfile(req.user.id, req.body);
+
+    res.json({
+      success: true,
+      message: 'Financial profile updated',
+      data: profile
+    });
+  } catch (error) {
+    console.error('Update financial profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update financial profile'
+    });
+  }
+});
+
+/**
+ * POST /api/analytics/gamification/recalculate
+ * Force recalculation of health score
+ */
+router.post('/gamification/recalculate', auth, [
+  body('workspaceId').optional().isMongoId()
+], async (req, res) => {
+  try {
+    const healthScore = await gamificationService.calculateHealthScore(
+      req.user.id,
+      req.body.workspaceId
+    );
+
+    res.json({
+      success: true,
+      message: 'Health score recalculated',
+      data: healthScore
+    });
+  } catch (error) {
+    console.error('Recalculate health score error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to recalculate health score'
+    });
+  }
+});
+
+// ========================
+// Existing Analytics Routes
+// ========================
 
 // Get data warehouse analytics
 router.get('/warehouse', auth, [
@@ -755,6 +1120,197 @@ router.post('/intelligence/recalculate', auth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to recalculate budgets'
+    });
+  }
+});
+
+// ========================
+// PREDICTIVE BURN RATE INTELLIGENCE ROUTES (Issue #470)
+// ========================
+
+/**
+ * GET /api/analytics/burn-rate
+ * Calculate daily/weekly spending velocity (burn rate)
+ */
+router.get('/burn-rate', auth, async (req, res) => {
+  try {
+    const { categoryId, workspaceId, startDate, endDate } = req.query;
+    
+    const burnRate = await intelligenceService.calculateBurnRate(req.user.id, {
+      categoryId,
+      workspaceId,
+      startDate,
+      endDate
+    });
+    
+    res.json({
+      success: true,
+      data: burnRate
+    });
+  } catch (error) {
+    console.error('Burn rate calculation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to calculate burn rate'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/forecast
+ * Predict future expenses using linear regression
+ */
+router.get('/forecast', auth, async (req, res) => {
+  try {
+    const { categoryId, workspaceId, daysToPredict } = req.query;
+    
+    const forecast = await intelligenceService.predictExpenses(req.user.id, {
+      categoryId,
+      workspaceId,
+      daysToPredict: daysToPredict ? parseInt(daysToPredict) : 30
+    });
+    
+    res.json({
+      success: true,
+      data: forecast
+    });
+  } catch (error) {
+    console.error('Forecast error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate forecast'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/forecast/moving-average
+ * Calculate weighted moving average for smoother predictions
+ */
+router.get('/forecast/moving-average', auth, async (req, res) => {
+  try {
+    const { categoryId, workspaceId, period } = req.query;
+    
+    const wma = await intelligenceService.calculateWeightedMovingAverage(req.user.id, {
+      categoryId,
+      workspaceId,
+      period: period ? parseInt(period) : 7
+    });
+    
+    res.json({
+      success: true,
+      data: wma
+    });
+  } catch (error) {
+    console.error('Moving average error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to calculate moving average'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/budget/:budgetId/exhaustion
+ * Predict when a budget will be exhausted based on burn rate
+ */
+router.get('/budget/:budgetId/exhaustion', auth, async (req, res) => {
+  try {
+    const { budgetId } = req.params;
+    
+    const exhaustion = await intelligenceService.predictBudgetExhaustion(req.user.id, budgetId);
+    
+    res.json({
+      success: true,
+      data: exhaustion
+    });
+  } catch (error) {
+    console.error('Budget exhaustion prediction error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to predict budget exhaustion'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/category-patterns
+ * Analyze spending patterns by category with predictions
+ */
+router.get('/category-patterns', auth, async (req, res) => {
+  try {
+    const { workspaceId, daysToAnalyze } = req.query;
+    
+    const patterns = await intelligenceService.analyzeCategoryPatterns(req.user.id, {
+      workspaceId,
+      daysToAnalyze: daysToAnalyze ? parseInt(daysToAnalyze) : 30
+    });
+    
+    res.json({
+      success: true,
+      data: patterns
+    });
+  } catch (error) {
+    console.error('Category patterns error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to analyze category patterns'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/insights
+ * Generate intelligent insights and recommendations
+ */
+router.get('/insights', auth, async (req, res) => {
+  try {
+    const insights = await intelligenceService.generateInsights(req.user.id);
+    
+    res.json({
+      success: true,
+      data: insights
+    });
+  } catch (error) {
+    console.error('Generate insights error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate insights'
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/forecast/complete
+ * Get complete forecast data including predictions, burn rate, and category analysis
+ */
+router.get('/forecast/complete', auth, async (req, res) => {
+  try {
+    const { categoryId, workspaceId } = req.query;
+    
+    // Run all analyses in parallel
+    const [burnRate, forecast, categoryPatterns, insights] = await Promise.all([
+      intelligenceService.calculateBurnRate(req.user.id, { categoryId, workspaceId }),
+      intelligenceService.predictExpenses(req.user.id, { categoryId, workspaceId, daysToPredict: 30 }),
+      intelligenceService.analyzeCategoryPatterns(req.user.id, { workspaceId }),
+      intelligenceService.generateInsights(req.user.id)
+    ]);
+    
+    res.json({
+      success: true,
+      data: {
+        burnRate,
+        forecast,
+        categoryPatterns,
+        insights,
+        generatedAt: new Date()
+      }
+    });
+  } catch (error) {
+    console.error('Complete forecast error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate complete forecast'
     });
   }
 });

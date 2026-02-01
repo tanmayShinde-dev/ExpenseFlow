@@ -147,32 +147,19 @@ router.post('/', auth, validateRequest(ExpenseSchemas.create), async (req, res) 
 
     // Emit real-time update to all user's connected devices
     const io = req.app.get('io');
-    
-    // Prepare the expense object with display amounts for socket emission
-    const expenseForSocket = expense.toObject();
-    if (expenseCurrency !== user.preferredCurrency) {
-      expenseForSocket.displayAmount = expenseData.convertedAmount;
-      expenseForSocket.displayCurrency = user.preferredCurrency;
-    } else {
-      expenseForSocket.displayAmount = expense.amount;
-      expenseForSocket.displayCurrency = expenseCurrency;
-    }
-    
-    io.to(`user_${req.user._id}`).emit('expense_created', expenseForSocket);
 
-    const response = {
-        ...expense.toObject(),
-        requiresApproval,
-        workflow: workflow ? { _id: workflow._id, status: workflow.status } : null
-    };
+    const expense = await expenseService.createExpense(value, req.user._id, io);
 
-    // Add display amounts to response
-    if (expenseCurrency !== user.preferredCurrency) {
-      response.displayAmount = expenseData.convertedAmount;
+    // Add display fields for backwards compatibility with UI
+    const user = await User.findById(req.user._id);
+    const response = expense.toObject();
+
+    if (response.originalCurrency !== user.preferredCurrency && response.convertedAmount) {
+      response.displayAmount = response.convertedAmount;
       response.displayCurrency = user.preferredCurrency;
     } else {
-      response.displayAmount = expense.amount;
-      response.displayCurrency = expenseCurrency;
+      response.displayAmount = response.amount;
+      response.displayCurrency = response.originalCurrency;
     }
 
     res.status(201).json(response);
@@ -231,7 +218,7 @@ router.put('/:id', auth, async (req, res) => {
 
     // Emit real-time update
     const io = req.app.get('io');
-    
+
     // Prepare the expense object with display amounts for socket emission
     const expenseForSocket = expense.toObject();
     if (expenseCurrency !== user.preferredCurrency) {
@@ -241,11 +228,11 @@ router.put('/:id', auth, async (req, res) => {
       expenseForSocket.displayAmount = expense.amount;
       expenseForSocket.displayCurrency = expenseCurrency;
     }
-    
+
     io.to(`user_${req.user._id}`).emit('expense_updated', expenseForSocket);
 
     const response = expense.toObject();
-    
+
     // Add display amounts to response
     if (expenseCurrency !== user.preferredCurrency) {
       response.displayAmount = updateData.convertedAmount || expense.amount;
@@ -313,6 +300,101 @@ router.get('/export', auth, async (req, res) => {
   } catch (error) {
     console.error('Export error:', error);
     res.status(500).json({ error: 'Failed to export expenses' });
+  }
+});
+
+// POST auto-categorize all uncategorized expenses
+router.post('/auto-categorize', auth, async (req, res) => {
+  try {
+    const { workspaceId, applyHighConfidence = true } = req.body;
+
+    // Use the workspace from body or query
+    const wsId = workspaceId || req.query.workspaceId;
+
+    const results = await categorizationService.autoCategorizeUncategorized(
+      req.user._id,
+      wsId
+    );
+
+    // Emit real-time updates for categorized expenses
+    if (results.categorized > 0 || results.suggested > 0) {
+      const io = req.app.get('io');
+      io.to(`user_${req.user._id}`).emit('expenses_recategorized', {
+        categorized: results.categorized,
+        suggested: results.suggested,
+        total: results.total
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Processed ${results.total} expenses: ${results.categorized} auto-categorized, ${results.suggested} suggestions available`,
+      data: results
+    });
+  } catch (error) {
+    console.error('Auto-categorize error:', error);
+    res.status(500).json({ error: 'Failed to auto-categorize expenses' });
+  }
+});
+
+// PUT apply category suggestion to an expense
+router.put('/:id/apply-suggestion', auth, async (req, res) => {
+  try {
+    const { category, isCorrection, originalSuggestion } = req.body;
+
+    if (!category) {
+      return res.status(400).json({ error: 'Category is required' });
+    }
+
+    const validCategories = ['food', 'transport', 'entertainment', 'utilities', 'healthcare', 'shopping', 'other'];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({ error: 'Invalid category' });
+    }
+
+    const result = await categorizationService.applySuggestion(
+      req.user._id,
+      req.params.id,
+      category,
+      isCorrection || false,
+      originalSuggestion
+    );
+
+    // Emit real-time update
+    const io = req.app.get('io');
+    io.to(`user_${req.user._id}`).emit('expense_updated', {
+      id: req.params.id,
+      category: category
+    });
+
+    res.json({
+      success: true,
+      message: 'Category applied successfully',
+      data: result
+    });
+  } catch (error) {
+    console.error('Apply suggestion error:', error);
+    res.status(500).json({ error: error.message || 'Failed to apply suggestion' });
+  }
+});
+
+// GET category suggestions for a description (convenience endpoint)
+router.get('/suggest-category', auth, async (req, res) => {
+  try {
+    const { description } = req.query;
+
+    if (!description || description.trim().length < 2) {
+      return res.status(400).json({ error: 'Description must be at least 2 characters' });
+    }
+
+    const suggestions = await categorizationService.suggestCategory(req.user._id, description);
+
+    res.json({
+      success: true,
+      data: suggestions
+    });
+  } catch (error) {
+    console.error('Suggest category error:', error);
+    res.status(500).json({ error: 'Failed to get category suggestions' });
   }
 });
 
