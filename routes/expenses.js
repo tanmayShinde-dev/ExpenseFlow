@@ -8,6 +8,8 @@ const currencyService = require('../services/currencyService');
 const aiService = require('../services/aiService');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
+const { ExpenseSchemas, validateRequest, validateQuery } = require('../middleware/inputValidator');
+const { expenseLimiter, exportLimiter } = require('../middleware/rateLimiter');
 const router = express.Router();
 
 const expenseSchema = Joi.object({
@@ -22,7 +24,7 @@ const expenseSchema = Joi.object({
 });
 
 // GET all expenses (Transactions)
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, validateQuery(ExpenseSchemas.filter), async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
@@ -33,10 +35,6 @@ router.get('/', auth, async (req, res) => {
     const query = workspaceId
       ? { workspace: workspaceId }
       : { user: req.user._id, workspace: null };
-
-    // Legacy support: If client specifically asks for expenses, we might filter, 
-    // but the app seems to treat everything that hits this endpoint as an 'expense' list previously.
-    // Now it returns all transactions.
 
     const total = await Transaction.countDocuments(query);
 
@@ -84,17 +82,14 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST new expense (Transaction)
-router.post('/', auth, async (req, res) => {
+router.post('/', auth, expenseLimiter, validateRequest(ExpenseSchemas.create), async (req, res) => {
   try {
-    const { error, value } = expenseSchema.validate(req.body);
-    if (error) return res.status(400).json({ error: error.details[0].message });
-
     // Use the new TransactionService but maintain expected response format
     const transactionService = require('../services/transactionService');
     const io = req.app.get('io');
 
-    // Create transaction (defaults to type from body, or kind='expense' if not specified logic in schema)
-    const transaction = await transactionService.createTransaction(value, req.user._id, io);
+    // Create transaction
+    const transaction = await transactionService.createTransaction(req.body, req.user._id, io);
 
     const user = await User.findById(req.user._id);
     const response = transaction.toObject();
