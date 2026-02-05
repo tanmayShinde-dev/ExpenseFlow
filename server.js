@@ -29,10 +29,10 @@ const expenseRoutes = require('./routes/expenses');
 const syncRoutes = require('./routes/sync');
 const splitsRoutes = require('./routes/splits');
 const groupsRoutes = require('./routes/groups');
-const backupRoutes = require('./routes/backups');
-const backupService = require('./services/backupService');
-const twoFactorAuthRoutes = require('./routes/twoFactorAuth');
-const cron = require('node-cron');
+const clientRoutes = require('./routes/clients');
+const invoiceRoutes = require('./routes/invoices');
+const paymentRoutes = require('./routes/payments');
+const timeEntryRoutes = require('./routes/time-entries');
 
 const app = express();
 const server = http.createServer(app);
