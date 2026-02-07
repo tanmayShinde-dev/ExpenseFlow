@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link rel="stylesheet" href="transactions.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 </head>
+
 <body>
     <!-- Navigation -->
     <nav class="nav-bar">
@@ -49,7 +51,7 @@
                     <input type="text" id="searchInput" placeholder="Search transactions..." />
                 </div>
             </div>
-            
+
             <div class="filters-grid">
                 <div class="filter-group">
                     <label>Type</label>
@@ -59,7 +61,7 @@
                         <option value="income">Income</option>
                     </select>
                 </div>
-                
+
                 <div class="filter-group">
                     <label>Category</label>
                     <select id="categoryFilter">
@@ -74,7 +76,7 @@
                         <option value="other">Other</option>
                     </select>
                 </div>
-                
+
                 <div class="filter-group">
                     <label>Date Range</label>
                     <select id="dateFilter">
@@ -87,7 +89,7 @@
                         <option value="custom">Custom Range</option>
                     </select>
                 </div>
-                
+
                 <div class="filter-group">
                     <label>Amount Range</label>
                     <select id="amountFilter">
@@ -99,7 +101,7 @@
                         <option value="5000+">₹5,000+</option>
                     </select>
                 </div>
-                
+
                 <div class="filter-actions">
                     <button class="clear-filters-btn" onclick="clearFilters()">
                         <i class="fas fa-times"></i> Clear
@@ -157,12 +159,12 @@
                         <!-- Transactions will be loaded here -->
                     </tbody>
                 </table>
-                
+
                 <div class="loading-state" id="loadingState">
                     <i class="fas fa-spinner fa-spin"></i>
                     <span>Loading transactions...</span>
                 </div>
-                
+
                 <div class="empty-state" id="emptyState" style="display: none;">
                     <i class="fas fa-receipt"></i>
                     <h3>No transactions found</h3>
@@ -217,12 +219,12 @@
                         <input type="number" id="transactionAmount" placeholder="0.00" step="0.01" required>
                     </div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="transactionDescription">Description *</label>
                     <input type="text" id="transactionDescription" placeholder="Enter description" required>
                 </div>
-                
+
                 <div class="form-row">
                     <div class="form-group">
                         <label for="transactionCategory">Category *</label>
@@ -243,12 +245,27 @@
                         <input type="date" id="transactionDate" required>
                     </div>
                 </div>
-                
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="transactionProject">Link to Project</label>
+                        <select id="transactionProject">
+                            <option value="">No Project</option>
+                            <!-- Projects will be loaded dynamicallly -->
+                        </select>
+                    </div>
+                    <div class="form-group"
+                        style="flex-direction: row; align-items: center; gap: 10px; padding-top: 25px;">
+                        <input type="checkbox" id="transactionBillable" style="width: 20px; height: 20px;">
+                        <label for="transactionBillable" style="margin: 0; cursor: pointer;">Billable to Client</label>
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <label for="transactionNotes">Notes</label>
                     <textarea id="transactionNotes" placeholder="Additional notes (optional)" rows="3"></textarea>
                 </div>
-                
+
                 <div class="form-actions">
                     <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button>
                     <button type="submit" class="btn-submit">
@@ -309,4 +326,5 @@
     <script src="protect.js"></script>
     <script src="transactions.js"></script>
 </body>
+
 </html>
