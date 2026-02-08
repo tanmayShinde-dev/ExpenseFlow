@@ -16,7 +16,7 @@ const backupService = require('../services/backupService');
 class CronJobs {
   static init() {
     // ========== BACKUP JOBS ==========
-    
+
     // Daily backup - Every day at 2:00 AM UTC
     cron.schedule('0 2 * * *', async () => {
       try {
@@ -320,10 +320,28 @@ class CronJobs {
       await this.runDailyAnomalyDetection();
     });
 
+    // Monthly fixed asset depreciation - 1st day of month at 1 AM UTC
+    cron.schedule('0 1 1 * *', async () => {
+      try {
+        console.log('[CronJobs] Running monthly asset depreciation...');
+        const assetService = require('./assetService');
+        const results = await assetService.runBatchDepreciation();
+        console.log(`[CronJobs] Processed ${results.length} asset depreciation entries`);
+      } catch (err) {
+        console.error('[CronJobs] Error in asset depreciation:', err);
+      }
+    });
+
     // Forecast accuracy update - Daily at 11 PM
     cron.schedule('0 23 * * *', async () => {
       console.log('[CronJobs] Updating forecast accuracy...');
       await this.updateForecastAccuracy();
+    });
+
+    // Retrain ML categorization models - Daily at 2 AM
+    cron.schedule('0 2 * * *', async () => {
+      console.log('[CronJobs] Retraining ML categorization models...');
+      await this.retrainCategorizationModels();
     });
 
     console.log('Cron jobs initialized successfully');

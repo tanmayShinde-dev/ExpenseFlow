@@ -9341,149 +9341,293 @@ input:checked + .toggle-slider::before {
 }
 
 /* ============================================
-   APPROVAL WORKFLOW & TEAM STYLES
-   Issue #552: Team Management UI
+   ENTERPRISE PROCUREMENT & FIXED ASSETS
+   Issue #574: Asset Lifecycle Management
    ============================================ */
 
-.approvals-list {
+.inventory-layout {
     display: grid;
-    gap: 15px;
-    margin-top: 20px;
+    grid-template-columns: 200px 1fr;
+    gap: 25px;
+    margin-top: 30px;
 }
 
-.approval-card {
+.inventory-sidebar {
+    padding: 20px 10px;
+    height: fit-content;
+}
+
+.side-nav {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 20px;
-    transition: transform 0.2s;
+    flex-direction: column;
+    gap: 10px;
 }
 
-.approval-card:hover {
-    transform: translateY(-3px);
-    border-color: var(--accent-primary);
-}
-
-.card-user {
+.nav-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 12px 15px;
+    text-align: left;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
-.avatar {
-    width: 40px;
-    height: 40px;
-    background: linear-gradient(135deg, #667eea, #764ba2);
-    border-radius: 50%;
+.nav-btn i { font-size: 1.1rem; }
+.nav-btn:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+.nav-btn.active { background: rgba(100, 255, 218, 0.1); color: var(--accent-primary); }
+
+.assets-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.asset-card {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.asset-icon {
+    width: 45px;
+    height: 45px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
-    font-weight: bold;
+    font-size: 1.2rem;
 }
 
-.user-meta strong { display: block; color: var(--text-primary); }
-.user-meta small { color: var(--text-secondary); font-size: 0.8rem; }
+.asset-icon.electronics { background: rgba(100, 255, 218, 0.15); color: #64ffda; }
+.asset-icon.furniture { background: rgba(72, 219, 251, 0.15); color: #48dbfb; }
+.asset-icon.machinery { background: rgba(255, 159, 67, 0.15); color: #ff9f43; }
 
-.card-details { flex-grow: 1; padding: 0 40px; }
-.card-details .amount { font-size: 1.4rem; font-weight: 700; color: var(--accent-primary); }
-.card-details .desc { color: var(--text-primary); margin: 4px 0; }
+.asset-info h3 { margin: 0; font-size: 1.1rem; }
+.asset-serial { font-size: 0.75rem; color: var(--text-secondary); }
 
-.category-tag {
-    display: inline-block;
-    padding: 2px 10px;
-    background: rgba(255,255,255,0.05);
-    border-radius: 12px;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
+.asset-value {
+    margin-top: 10px;
 }
 
-.btn-review {
-    padding: 8px 20px;
-    background: var(--accent-primary);
-    color: #0d1117;
-    border: none;
-    border-radius: 8px;
-    font-weight: 600;
-    cursor: pointer;
+.asset-value label { font-size: 0.7rem; text-transform: uppercase; color: var(--text-secondary); }
+.asset-value .value { font-size: 1.4rem; font-weight: 700; color: var(--text-primary); }
+
+.asset-life {
+    margin-top: 5px;
 }
 
-.history-item {
+.progress-bar {
+    height: 6px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 5px;
+}
+
+.progress { height: 100%; background: var(--accent-primary); }
+
+.asset-footer {
     display: flex;
     justify-content: space-between;
-    padding: 12px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
+    align-items: center;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding-top: 15px;
 }
 
-.status-pending { color: #fbbf24; }
-.status-approved { color: #34d399; }
-.status-rejected { color: #f87171; }
+.status-pill {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.05);
+}
 
-/* Teams Grid */
-.teams-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 20px;
+.status-pill.active { color: #64ffda; }
+.status-pill.maintenance { color: #ff9f43; }
+
+/* Orders Table */
+.orders-table-container { padding: 10px; }
+.data-table { width: 100%; border-collapse: collapse; text-align: left; }
+.data-table th { padding: 15px; border-bottom: 2px solid rgba(255,255,255,0.05); color: var(--text-secondary); font-size: 0.8rem; }
+.data-table td { padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+.os-pill { padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; }
+.os-pill.draft { background: #34495e; }
+.os-pill.pending_approval { background: #d35400; }
+.os-pill.approved { background: #27ae60; }
+.os-pill.received { background: #2980b9; }
+
+/* PR Modal Custom */
+.items-editor {
     margin-top: 20px;
+    background: rgba(0,0,0,0.2);
+    padding: 15px;
+    border-radius: 8px;
 }
 
-.team-card {
+.item-row {
+    display: grid;
+    grid-template-columns: 1fr 80px 120px 40px;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.item-row input { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 8px; border-radius: 4px; color: white; }
+.remove-item { background: transparent; border: none; color: #ff6b6b; cursor: pointer; }
+
+.charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.chart-container { padding: 25px; }
+.chart-container h3 { margin-bottom: 20px; font-size: 1rem; color: var(--text-secondary); }
+
+/* ============================================
+   TAX COMPLIANCE & FORENSIC AUDIT
+   Issue #573: Global Compliance Module
+   ============================================ */
+
+.compliance-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.radial-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.circular-chart {
+    display: block;
+    margin: 10px auto;
+    max-width: 120px;
+}
+
+.circle { fill: none; stroke: #64ffda; stroke-width: 2.8; stroke-linecap: round; transition: stroke-dasharray 1s ease; }
+.circle-bg { fill: none; stroke: rgba(255,255,255,0.05); stroke-width: 2.8; }
+.percentage { fill: #fff; font-family: sans-serif; font-size: 0.5em; text-anchor: middle; font-weight: 700; }
+
+.compliance-grid {
+    display: grid;
+    grid-template-columns: 350px 1fr;
+    gap: 25px;
+}
+
+.section-card {
     padding: 20px;
 }
 
-.dept-badge {
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border: 1px solid var(--accent-primary);
-    border-radius: 10px;
-    color: var(--accent-primary);
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
 }
 
-.team-meta p {
-    margin: 8px 0;
-    font-size: 0.9rem;
+.card-header h3 { font-size: 1rem; color: var(--text-secondary); margin: 0; }
+.card-header h3 i { margin-right: 10px; color: var(--accent-primary); }
+
+.packs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.pack-item {
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.pack-meta strong { display: block; font-size: 0.9rem; }
+.pack-meta span { font-size: 0.75rem; color: var(--text-secondary); }
+
+.badgered {
+    background: rgba(255, 107, 107, 0.1);
+    color: #ff6b6b;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.juris-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.juris-item:last-child { border: none; }
+.juris-meta strong { display: block; font-size: 0.85rem; }
+.juris-meta small { color: var(--text-secondary); font-size: 0.75rem; }
+
+.forensic-filters {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.filter-chip {
+    padding: 5px 15px;
+    border-radius: 15px;
+    background: rgba(255,255,255,0.05);
+    font-size: 0.75rem;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.filter-chip.active {
+    background: rgba(100, 255, 218, 0.1);
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.empty-findings {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 300px;
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+
+.empty-findings i { font-size: 4rem; margin-bottom: 20px; }
+
+/* Multi-step Logic Styles */
+.audit-options {
+    margin: 20px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+    cursor: pointer;
     color: var(--text-secondary);
 }
 
-.team-meta i { margin-right: 8px; opacity: 0.7; }
-
-/* Settings Layout */
-.settings-layout {
-    display: grid;
-    grid-template-columns: 240px 1fr;
-    gap: 30px;
-    margin-top: 20px;
-}
-
-.settings-nav {
-    list-style: none;
-    padding: 10px;
-}
-
-.settings-nav li {
-    padding: 12px 15px;
-    border-radius: 8px;
-    margin-bottom: 5px;
-    cursor: pointer;
-}
-
-.settings-nav li.active {
-    background: rgba(100, 255, 218, 0.1);
-    color: var(--accent-primary);
-}
-
-.settings-nav a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 10px; }
-
-.btn-approve { background: #34d399; color: #fff; padding: 10px 20px; border-radius: 8px; border: none; }
-.btn-reject { background: #f87171; color: #fff; padding: 10px 20px; border-radius: 8px; border: none; margin-right: 10px; }
-
-textarea {
-    width: 100%;
-    background: rgba(0,0,0,0.2);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px;
-    color: #fff;
-    padding: 12px;
-    margin-top: 10px;
-    min-height: 80px;
-}
+.checkbox-container input { width: 16px; height: 16px; }

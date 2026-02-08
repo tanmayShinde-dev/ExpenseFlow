@@ -95,10 +95,18 @@ const transactionSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Rule'
     }],
-    tags: [{
+    projectId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Tag'
-    }]
+        ref: 'Project',
+        default: null
+    },
+    billing: {
+        isBillable: { type: Boolean, default: false },
+        isBilled: { type: Boolean, default: false },
+        billedAt: Date,
+        invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectInvoice' },
+        markupOverride: Number
+    }
 }, {
     timestamps: true
 });
