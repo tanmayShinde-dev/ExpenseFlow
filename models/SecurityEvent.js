@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 /**
  * Security Event Model
  * Issue #504: Security Requirements
+ * Issue #562: Session Anomaly Detection
  * 
  * Tracks security events including:
  * - 2FA verification attempts and failures
@@ -12,6 +13,7 @@ const mongoose = require('mongoose');
  * - Velocity-based anomalies
  * - Session validation events
  * - Suspicious login detection
+ * - Session anomaly detection (IP/UA drift, impossible travel)
  */
 
 const securityEventSchema = new mongoose.Schema({
@@ -45,7 +47,13 @@ const securityEventSchema = new mongoose.Schema({
       'DEVICE_CHANGE',
       'LOCATION_ANOMALY',
       'BRUTE_FORCE_ATTEMPT',
-      'IP_BLOCKED'
+      'IP_BLOCKED',
+      'SESSION_ANOMALY_DETECTED',
+      'FORCED_REAUTH',
+      'IP_DRIFT_DETECTED',
+      'USER_AGENT_DRIFT_DETECTED',
+      'IMPOSSIBLE_TRAVEL_DETECTED',
+      'RAPID_SESSION_SWITCHING_DETECTED'
     ],
     required: true,
     index: true
