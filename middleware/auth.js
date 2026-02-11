@@ -1,10 +1,16 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Session = require('../models/Session');
+const SessionAnomalyDetectionService = require('../services/sessionAnomalyDetectionService');
+const { 
+  checkSessionAnomaly, 
+  strictSessionAnomaly 
+} = require('./sessionAnomalyDetection');
 
 /**
  * Enhanced Authentication Middleware with Session Tracking
  * Issue #338: Enterprise-Grade Audit Trail & TOTP Security Suite
+ * Issue #562: Session Anomaly Detection via IP/UA Drift
  */
 
 const auth = async (req, res, next) => {
@@ -34,6 +40,32 @@ const auth = async (req, res, next) => {
       
       // Update session activity
       sessionValidation.session.activity.lastEndpoint = req.originalUrl;
+      
+      // Check for session anomalies (IP/UA drift)
+      const anomalyCheck = await SessionAnomalyDetectionService.checkSessionAnomaly(
+        req.sessionId,
+        req
+      );
+      
+      // Handle critical anomalies immediately
+      if (anomalyCheck.action === 'FORCE_REAUTH') {
+        await SessionAnomalyDetectionService.forceReauthentication(
+          req.sessionId,
+          `Session anomaly detected: ${anomalyCheck.anomalyType.join(', ')}`
+        );
+        
+        return res.status(401).json({ 
+          error: 'Session security violation detected. Please login again.',
+          code: 'SESSION_ANOMALY_DETECTED',
+          anomalyDetected: true,
+          anomalyTypes: anomalyCheck.anomalyType,
+          riskScore: anomalyCheck.riskScore,
+          requiresReauth: true
+        });
+      }
+      
+      // Attach anomaly info to request for downstream processing
+      req.sessionAnomaly = anomalyCheck;
     }
     
     const user = await User.findById(decoded.id);
@@ -190,3 +222,5 @@ module.exports.authenticateToken = auth;
 module.exports.require2FA = require2FA
 module.exports.verify2FAToken = verify2FAToken;
 module.exports.optionalAuth = optionalAuth;
+module.exports.checkSessionAnomaly = checkSessionAnomaly;
+module.exports.strictSessionAnomaly = strictSessionAnomaly;
