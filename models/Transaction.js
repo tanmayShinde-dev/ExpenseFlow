@@ -106,7 +106,36 @@ const transactionSchema = new mongoose.Schema({
         billedAt: Date,
         invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectInvoice' },
         markupOverride: Number
-    }
+    },
+    // New fields for Historical Currency Revaluation Engine Overhaul
+    forexMetadata: {
+        rateAtTransaction: { type: Number },
+        rateSource: { type: String, default: 'manual' },
+        lastRevaluedAt: { type: Date },
+        isHistoricallyAccurate: { type: Boolean, default: false },
+        historicalProvider: { type: String }
+    },
+    revaluationHistory: [{
+        revaluedAt: { type: Date, default: Date.now },
+        oldRate: Number,
+        newRate: Number,
+        oldConvertedAmount: Number,
+        newConvertedAmount: Number,
+        baseCurrency: String,
+        reason: String
+    }],
+    status: {
+        type: String,
+        enum: ['pending', 'processing', 'validated', 'archived', 'failed'],
+        default: 'pending'
+    },
+    processingLogs: [{
+        step: String,
+        status: String,
+        timestamp: { type: Date, default: Date.now },
+        message: String,
+        details: mongoose.Schema.Types.Mixed
+    }]
 }, {
     timestamps: true
 });
@@ -123,6 +152,13 @@ transactionSchema.pre('save', function (next) {
     }
     next();
 });
+
+// Method to log processing steps
+transactionSchema.methods.logStep = async function (step, status, message, details = {}) {
+    this.processingLogs.push({ step, status, message, details });
+    if (status === 'failed') this.status = 'failed';
+    return this.save();
+};
 
 // Indexes for performance optimization
 transactionSchema.index({ description: 'text', merchant: 'text' }); // Text search
