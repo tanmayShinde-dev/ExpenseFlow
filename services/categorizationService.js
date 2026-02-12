@@ -2,6 +2,7 @@ const tf = require('@tensorflow/tfjs');
 const CategoryPattern = require('../models/CategoryPattern');
 const CategoryTraining = require('../models/CategoryTraining');
 const CategoryModel = require('../models/CategoryModel');
+const logger = require('../utils/logger');
 
 class CategorizationService {
   constructor() {
@@ -81,11 +82,11 @@ class CategorizationService {
       const trainingData = await CategoryTraining.getTrainingData(userId, 5000);
 
       if (trainingData.length < 10) {
-        console.log(`Not enough training data for user ${userId}`);
+        logger.warn(`Not enough training data for user ${userId}`);
         return false;
       }
 
-      console.log(`Training TensorFlow model for user ${userId} with ${trainingData.length} samples`);
+      logger.info(`Training TensorFlow model for user ${userId} with ${trainingData.length} samples`);
 
       // Prepare training data
       const inputs = [];
@@ -160,7 +161,7 @@ class CategorizationService {
       xs.dispose();
       ys.dispose();
 
-      console.log(`TensorFlow model trained successfully for user ${userId} with ${finalAccuracy.toFixed(4)} accuracy`);
+      logger.info(`TensorFlow model trained successfully for user ${userId} with ${finalAccuracy.toFixed(4)} accuracy`);
       return true;
     } catch (error) {
       console.error('Error training TensorFlow model:', error);
