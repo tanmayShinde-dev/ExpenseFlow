@@ -11,7 +11,6 @@ process.on('uncaughtException', (err) => {
   // Optionally, perform cleanup or alerting here
 });
 const http = require('http');
-const socketIo = require('socket.io');
 const mongoose = require('mongoose');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -166,31 +165,13 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static('public'));
 app.use(express.static('.'));
 
-// Security logging middleware
-app.use((req, res, next) => {
-  const originalSend = res.send;
-  res.send = function (data) {
-    // Log failed requests
-    if (res.statusCode >= 400) {
-      securityMonitor.logSecurityEvent(req, 'suspicious_activity', {
-        statusCode: res.statusCode,
-        response: typeof data === 'string' ? data.substring(0, 200) : 'Non-string response'
-      });
-    }
-    originalSend.call(this, data);
-  };
-  next();
-});
-
-// Make io available to the  routes
-app.set('io', io);
-
-// Make io globally available for notifications
-global.io = io;
-
-// Database connection
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => {
+/**
+ * Connect to MongoDB database
+ * @returns {Promise<void>}
+ */
+async function connectDatabase() {
+  try {
+    await mongoose.connect(config.database.uri, config.database.options);
     console.log('MongoDB connected');
     // Initialize cron jobs after DB connection (includes backup scheduling)
     // Issue #462: Automated Backup System for Financial Data
