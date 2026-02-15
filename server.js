@@ -11,6 +11,7 @@ process.on('uncaughtException', (err) => {
   // Optionally, perform cleanup or alerting here
 });
 const http = require('http');
+const socketIo = require('socket.io');
 const mongoose = require('mongoose');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -171,15 +172,18 @@ app.use(express.static('.'));
  */
 async function connectDatabase() {
   try {
-    await mongoose.connect(config.database.uri, config.database.options);
+    await mongoose.connect(process.env.MONGODB_URI);
     console.log('MongoDB connected');
     // Initialize cron jobs after DB connection (includes backup scheduling)
     // Issue #462: Automated Backup System for Financial Data
     CronJobs.init();
-    require('./jobs/syncCleanup').start();
-    console.log('✓ Cron jobs initialized (Backup & Sync Maintenance)');
-  })
-  .catch(err => console.error('MongoDB connection error:', err));
+    require('./jobs/trendAnalyzer').start();
+    require('./jobs/reportScheduler').start();
+    console.log('✓ Cron jobs initialized (Backup, Trend & Reports)');
+  } catch (err) {
+    console.error('MongoDB connection error:', err);
+  }
+}
 
 // Socket.IO authentication
 io.use(socketAuth);
@@ -283,6 +287,7 @@ app.use('/api/profile', require('./routes/profile'));
 app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
 app.use('/api/treasury', require('./routes/treasury'));
 app.use('/api/search', require('./routes/search'));
+app.use('/api/exports', require('./routes/exports'));
 app.use('/api/maps', require('./routes/maps'));
 app.use('/api/sync', require('./middleware/syncInterceptor'), require('./routes/sync'));
 
@@ -294,6 +299,9 @@ app.use(notFoundHandler);
 
 // Global error handler middleware (must be after all routes)
 app.use(errorHandler);
+
+// Initialize database connection
+connectDatabase();
 
 // Root route to serve the UI
 app.get('/', (req, res) => {
