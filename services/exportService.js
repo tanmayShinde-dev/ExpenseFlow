@@ -2,12 +2,49 @@ const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
+const Expense = require('../models/Expense'); // adjust model name if different
 
 class ExportService {
 
   /**
    * Generate export based on format
    */
+
+  async getExpensesForExport(userId, filters = {}) {
+  const query = { user: userId };
+
+  // Date filter
+  if (filters.startDate && filters.endDate) {
+    query.date = {
+      $gte: new Date(filters.startDate),
+      $lte: new Date(filters.endDate)
+    };
+  }
+
+  // Category filter
+  if (filters.category) {
+    query.category = filters.category;
+  }
+
+  // Type filter
+  if (filters.type) {
+    query.type = filters.type;
+  }
+
+  // NEW: Amount filter
+  if (filters.minAmount || filters.maxAmount) {
+    query.amount = {};
+    if (filters.minAmount) {
+      query.amount.$gte = Number(filters.minAmount);
+    }
+    if (filters.maxAmount) {
+      query.amount.$lte = Number(filters.maxAmount);
+    }
+  }
+
+  return await Expense.find(query).sort({ date: -1 });
+}
+
   async generateExport(data, format, options = {}) {
     if (format === 'pdf') {
       return this.exportToPDF(data, options);
