@@ -22,6 +22,7 @@ const timeEntryRoutes = require('./time-entries');
 const notificationRoutes = require('./notifications');
 const receiptRoutes = require('./receipts');
 const budgetRoutes = require('./budgets');
+const envelopeRoutes = require('./envelopes');
 const goalRoutes = require('./goals');
 const debtRoutes = require('./debts');
 const analyticsRoutes = require('./analytics');
@@ -56,6 +57,9 @@ function configureRoutes(app) {
 
   // Budget routes
   app.use('/api/budgets', require('./budgets'));
+
+  // Envelope routes
+  app.use('/api/envelopes', envelopeRoutes);
 
   // Goal routes
   app.use('/api/goals', require('./goals'));
