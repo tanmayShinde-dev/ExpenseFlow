@@ -1035,6 +1035,42 @@ class AnalyticsService {
     }
 
     /**
+     * Get probabilistic liquidity insights using the Forecasting Engine
+     * Issue #678: Predictive risk analysis for dashboard integration
+     */
+    async getLiquidityInsights(userId) {
+        const forecastingEngine = require('./forecastingEngine');
+        const forecast = await forecastingEngine.runSimulation(userId); // Run baseline
+
+        const { summary } = forecast;
+        const insights = [];
+
+        if (summary.riskOfInsolvencyPct > 10) {
+            insights.push({
+                type: 'critical',
+                title: 'Liquidity Risk Alert',
+                message: `Based on your spending velocity, there is a ${summary.riskOfInsolvencyPct.toFixed(1)}% probability of reaching a zero balance in the next 90 days.`,
+                impact: 'High'
+            });
+        }
+
+        if (summary.medianFinalBalance < summary.startBalance) {
+            insights.push({
+                type: 'warning',
+                title: 'Negative Cash Flow Trend',
+                message: 'Your probabilistic 90-day trajectory shows a net decline in total liquidity.',
+                impact: 'Medium'
+            });
+        }
+
+        return {
+            forecastSummary: summary,
+            insights,
+            generatedAt: new Date()
+        };
+    }
+
+    /**
      * Invalidate user analytics cache
      */
     async invalidateCache(userId) {

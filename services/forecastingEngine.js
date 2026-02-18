@@ -1,151 +1,131 @@
+const Transaction = require('../models/Transaction');
+const simulationMath = require('../utils/simulationMath');
+const moment = require('moment-timezone');
+
+
 /**
  * Forecasting Engine
- * Handles mathematical projections, trend analysis, and regression models
- * for cash flow forecasting.
+ * Issue #678: Runs probabilistic Monte Carlo simulations for cash-flow prediction.
  */
-
 class ForecastingEngine {
-    constructor() {
-        this.DEFAULT_CONFIDENCE_INTERVAL = 0.95;
-    }
-
     /**
-     * Calculate Simple Moving Average
-     * @param {Array<number>} data - Array of values
-     * @param {number} window - Window size
+     * Run a simulation for a specific user and scenario
      */
-    calculateSMA(data, window) {
-        if (data.length < window) return null;
-        let sum = 0;
-        for (let i = 0; i < window; i++) {
-            sum += data[i];
-        }
-        return sum / window;
-    }
-
-    /**
-     * Calculate Weighted Moving Average (giving more weight to recent data)
-     * @param {Array<number>} data - Array of values (newest last)
-     */
-    calculateWMA(data) {
-        if (!data || data.length === 0) return 0;
-
-        let sum = 0;
-        let weightSum = 0;
-
-        data.forEach((val, index) => {
-            const weight = index + 1; // Linear weighting
-            sum += val * weight;
-            weightSum += weight;
+    async runSimulation(userId, scenario = null) {
+        // 1. Get historical context (last 180 days)
+        const historyStart = moment().subtract(180, 'days').toDate();
+        const transactions = await Transaction.find({
+            user: userId,
+            date: { $gte: historyStart },
+            status: { $ne: 'failed' }
         });
 
-        return sum / weightSum;
-    }
+        // 2. Extract spending velocity and variance per category
+        const velocity = this._analyzeVelocity(transactions);
 
-    /**
-     * Perform Linear Regression to find trend line
-     * y = mx + c
-     * @param {Array<{x: number, y: number}>} points 
-     */
-    calculateLinearRegression(points) {
-        const n = points.length;
-        if (n === 0) return { slope: 0, intercept: 0 };
+        // 3. Setup simulation parameters
+        const horizon = scenario?.config?.timeHorizonDays || 90;
+        const iterations = scenario?.config?.iterationCount || 1000;
+        const startBalance = await this._getCurrentLiquidity(userId);
 
-        let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+        const simulationResults = [];
 
-        for (const p of points) {
-            sumX += p.x;
-            sumY += p.y;
-            sumXY += p.x * p.y;
-            sumXX += p.x * p.x;
-        }
+        // 4. Run iterations
+        for (let i = 0; i < iterations; i++) {
+            let currentBalance = startBalance;
+            const path = [startBalance];
 
-        const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-        const intercept = (sumY - slope * sumX) / n;
+            for (let day = 1; day <= horizon; day++) {
+                // Stochastic daily cash flow
+                let dailyChange = 0;
 
-        return { slope, intercept };
-    }
+                velocity.forEach(cat => {
+                    const dailyMean = cat.avgMonthly / 30;
+                    const dailyStdDev = (cat.avgMonthly * 0.2) / 30; // 20% volatility assumption
 
-    /**
-     * Calculate Burn Rate
-     * Average monthly net loss (if applicable)
-     * @param {Array<number>} monthlyNetFlows - Last N months of (Income - Expense)
-     */
-    calculateBurnRate(monthlyNetFlows) {
-        // Filter only negative flows (spending more than income)
-        // Or should we look at total expenses? Usually burn rate is specifically for net loss scenarios or total spend.
-        // For personal finance, 'Burn Rate' is usually total expenses.
-        // For startups, it's net loss.
-        // We will return both: 'Gross Burn' (Total Expenses) and 'Net Burn' (Net Loss)
+                    let sample = simulationMath.sampleNormal(dailyMean, dailyStdDev);
 
-        // This method expects generic monthlyNetFlows to calculate Net Burn
-        const negativeFlows = monthlyNetFlows.filter(flow => flow < 0);
-
-        if (negativeFlows.length === 0) return 0; // Profitable or break-even
-
-        return Math.abs(this.calculateWMA(negativeFlows));
-    }
-
-    /**
-     * Project Future Balance
-     * @param {number} currentBalance 
-     * @param {number} dailyBurnRate 
-     * @param {Array<Object>} recurringEvents - { amount, dayOfMonth, type: 'income'|'expense' }
-     * @param {number} daysToProject 
-     */
-    generateProjection(currentBalance, dailyBurnRate, recurringEvents, daysToProject = 180) {
-        const projection = [];
-        let runningBalance = currentBalance;
-        let date = new Date(); // Start from today
-        date.setHours(0, 0, 0, 0);
-
-        for (let i = 0; i < daysToProject; i++) {
-            // increment date
-            date.setDate(date.getDate() + 1);
-            const currentDate = new Date(date);
-
-            // 1. Apple Daily Variable Spend (Burn Rate component)
-            // We assume dailyBurnRate includes variable expenses averaged out
-            runningBalance -= dailyBurnRate;
-
-            // 2. Apply Fixed Recurring Events for this specific day
-            const dayOfMonth = currentDate.getDate();
-
-            recurringEvents.forEach(event => {
-                // Simplistic day matching. In real app, need to handle month lengths, etc.
-                if (event.dayOfMonth === dayOfMonth) {
-                    if (event.type === 'income') {
-                        runningBalance += event.amount;
-                    } else {
-                        runningBalance -= event.amount;
+                    // Apply scenario adjustments
+                    if (scenario && scenario.adjustments) {
+                        if (sample > 0) sample *= (1 + scenario.adjustments.incomeChangePct / 100);
+                        else sample *= (1 + scenario.adjustments.expenseChangePct / 100);
                     }
-                }
-            });
 
-            projection.push({
-                date: currentDate.toISOString(),
-                balance: parseFloat(runningBalance.toFixed(2)),
-                isProjected: true
-            });
+                    dailyChange += sample;
+                });
+
+                // Apply one-time impacts from scenario
+                if (scenario?.adjustments?.oneTimeImpacts) {
+                    scenario.adjustments.oneTimeImpacts.forEach(impact => {
+                        const impactDay = moment(impact.date).diff(moment(), 'days');
+                        if (impactDay === day) dailyChange += impact.amount;
+                    });
+                }
+
+                currentBalance += dailyChange;
+                path.push(currentBalance);
+            }
+            simulationResults.push({ path, final: currentBalance });
         }
 
-        return projection;
+        // 5. Aggregate results
+        return this._processResults(simulationResults, horizon);
     }
 
-    /**
-     * Calculate Runway (Time To Zero)
-     * @param {Array<{balance: number}>} projectionData 
-     */
-    calculateRunway(projectionData) {
-        const negativePointIndex = projectionData.findIndex(p => p.balance < 0);
+    _analyzeVelocity(transactions) {
+        const categories = {};
+        transactions.forEach(tx => {
+            if (!categories[tx.category]) categories[tx.category] = [];
+            categories[tx.category].push(tx.amount * (tx.type === 'income' ? 1 : -1));
+        });
 
-        if (negativePointIndex === -1) {
-            return null; // Infinite runway within projection period
+        return Object.keys(categories).map(cat => {
+            const sum = categories[cat].reduce((a, b) => a + b, 0);
+            return {
+                category: cat,
+                avgMonthly: sum / 6 // 6 months
+            };
+        });
+    }
+
+    async _getCurrentLiquidity(userId) {
+        // Simplified: Sum of all non-deleted transactions
+        const result = await Transaction.aggregate([
+            { $match: { user: userId, status: { $ne: 'failed' } } },
+            { $group: { _id: null, total: { $sum: { $cond: [{ $eq: ["$type", "income"] }, "$amount", { $multiply: ["$amount", -1] }] } } } }
+        ]);
+        return result[0]?.total || 0;
+    }
+
+    _processResults(results, horizon) {
+        const finalBalances = results.map(r => r.final);
+        const percentiles = simulationMath.calculatePercentiles(finalBalances);
+
+        // Calculate "Insolvency Risk" (Probability of balance < 0)
+        const insolvencyEvents = finalBalances.filter(b => b < 0).length;
+        const riskOfInsolvency = (insolvencyEvents / results.length) * 100;
+
+        // Daily confidence bands
+        const dailyBands = [];
+        for (let day = 0; day <= horizon; day++) {
+            const daySamples = results.map(r => r.path[day]);
+            dailyBands.push({
+                day,
+                ...simulationMath.calculatePercentiles(daySamples)
+            });
         }
 
-        return negativePointIndex; // Days until zero
+        return {
+            summary: {
+                startBalance: results[0].path[0],
+                medianFinalBalance: percentiles.p50,
+                worstCaseP5: percentiles.p5,
+                bestCaseP95: percentiles.p95,
+                riskOfInsolvencyPct: riskOfInsolvency
+            },
+            projections: dailyBands
+        };
     }
 }
 
-// Export a singleton instance
 module.exports = new ForecastingEngine();

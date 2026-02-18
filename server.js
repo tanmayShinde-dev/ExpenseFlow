@@ -67,7 +67,8 @@ async function connectDatabase() {
         require('./jobs/trendAnalyzer').start();
         require('./jobs/reportScheduler').start();
         require('./jobs/accessAuditor').start();
-        require('./jobs/eventArchiver').start();
+        require('./jobs/forecastRetrainer').start();
+
 
         console.log('✓ Cron jobs initialized');
       } catch (err) {
@@ -92,7 +93,8 @@ app.use('/api/expenses', require('./routes/expenses'));
 app.use('/api/workspaces', require('./routes/workspaces'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/export', require('./routes/export'));
-app.use('/api/security/vault', require('./routes/security/vault'));
+app.use('/api/forecasting', require('./routes/forecasting'));
+
 
 
 /* ================================
