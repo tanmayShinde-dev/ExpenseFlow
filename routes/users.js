@@ -1,25 +1,27 @@
-const express=require("express");
-const router=express.Router();
-const User=require("../models/User");
-const protect=require("../middleware/authMiddleware");
+const express = require("express");
+const router = express.Router();
+const User = require("../models/User");
+const protect = require("../middleware/authMiddleware");
+
+const ResponseFactory = require("../utils/ResponseFactory");
+const AppError = require("../utils/AppError");
 
 // Get user profile
-router.get("/profile",protect,async(req,res)=>{
-    try{
-        const user=await User.findById(req.user.id).select("-password");
-        if(!user){
-            return res.status(404).json({message:"User not found"});
+router.get("/profile", protect, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.user.id).select("-password");
+        if (!user) {
+            return next(new AppError("User not found", 404));
         }
-        res.json({
-            name:user.name,
-            email:user.email,
-            createdAt:user.createdAt
+
+        return ResponseFactory.success(res, {
+            name: user.name,
+            email: user.email,
+            createdAt: user.createdAt
         });
-    }
-    catch(err){
-        console.error(err);
-        res.status(500).json({message:"Server error"});
+    } catch (err) {
+        next(err);
     }
 });
 
-module.exports=router;
+module.exports = router;

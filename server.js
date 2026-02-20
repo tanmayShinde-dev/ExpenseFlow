@@ -135,13 +135,7 @@ app.get('/', (req, res) => {
    ERROR HANDLER
 ================================ */
 
-app.use((err, req, res, next) => {
-  console.error('🔥 Server Error:', err.stack);
-  res.status(500).json({
-    success: false,
-    message: 'Internal Server Error'
-  });
-});
+app.use(require('./middleware/globalErrorHandler'));
 
 /* ================================
    SERVER START (ONLY DEV)
