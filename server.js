@@ -78,6 +78,8 @@ async function connectDatabase() {
         require('./jobs/taxonomyAuditor').start();
         require('./jobs/conflictCleaner').start();
         require('./jobs/logRotator').start();
+        require('./jobs/searchIndexer').start();
+
 
 
 
@@ -109,7 +111,7 @@ app.use('/api/governance', require('./routes/governance'));
 app.use('/api/taxonomy', require('./routes/taxonomy'));
 app.use('/api/sync', require('./routes/syncManager'));
 app.use('/api/telemetry', require('./routes/telemetry'));
-app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/search', require('./routes/search'));
 
 
 
