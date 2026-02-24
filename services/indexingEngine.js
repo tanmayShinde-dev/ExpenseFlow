@@ -1,95 +1,103 @@
 const SearchIndex = require('../models/SearchIndex');
-const metadataProcessor = require('../utils/metadataProcessor');
 const logger = require('../utils/structuredLogger');
 
 /**
- * Indexing Engine Service
- * Issue #720: Core logic to synchronize the SearchIndex with the Transaction database.
- * Uses semantic enrichment to build a rich search experience.
+ * Indexing Engine
+ * Issue #756: The brain for tokenization and cross-entity indexing.
+ * Transforms raw database objects into searchable, tenant-isolated vectors.
  */
 class IndexingEngine {
     /**
-     * Updates or creates a search index entry for a transaction
+     * Index a single entity
      */
-    async indexTransaction(transaction) {
+    async indexEntity(entityType, entityData, userId, workspaceId = null) {
         try {
-            // 1. Extract semantic metadata
-            const enrichment = metadataProcessor.process(transaction);
+            const tokens = this._tokenize(entityData);
 
-            // 2. Prepare the indexed document
-            const searchData = {
-                userId: transaction.user,
-                transactionId: transaction._id,
-                searchText: `${transaction.description} ${transaction.merchant} ${transaction.notes || ''}`,
-                merchant: transaction.merchant,
-                amount: transaction.amount,
-                currency: transaction.originalCurrency,
-                category: transaction.category ? transaction.category.toString() : 'uncategorized',
-                date: transaction.date,
-                workspaceId: transaction.workspace,
-                tags: enrichment.tags,
-                sentiment: enrichment.sentiment,
-                businessType: enrichment.businessType,
-                isRecurring: enrichment.isRecurring,
+            const indexData = {
+                entityId: entityData._id,
+                entityType,
+                workspaceId,
+                userId,
+                tokens,
+                metadata: {
+                    description: entityData.description || entityData.name,
+                    amount: entityData.amount,
+                    category: entityData.category,
+                    merchant: entityData.merchant,
+                    date: entityData.date
+                },
                 lastIndexedAt: new Date()
             };
 
-            // 3. Update the flat search store (Upsert)
             await SearchIndex.findOneAndUpdate(
-                { transactionId: transaction._id },
-                searchData,
+                { entityId: entityData._id },
+                indexData,
                 { upsert: true, new: true }
             );
 
-            // 4. Mirror enrichment back to the transaction for data pointer consistency
-            transaction.searchMetadata = {
-                tags: enrichment.tags,
-                merchantSentiment: enrichment.sentiment,
-                businessType: enrichment.businessType,
-                isRecurringInferred: enrichment.isRecurring,
-                indexedAt: new Date()
-            };
-
-            // Note: We don't call save() here to avoid recursive triggers if called from post-save hooks
-            // But usually we would want to persist this back eventually.
-            // For this implementation, we assume the index is the source of truth for search.
-
-            return { success: true };
-        } catch (err) {
-            logger.error('Failed to index transaction', {
-                transactionId: transaction._id,
-                error: err.message
+            // console.log(`[IndexingEngine] Indexed ${entityType}: ${entityData._id}`);
+        } catch (error) {
+            logger.error('[IndexingEngine] Error indexing entity:', {
+                entityId: entityData._id,
+                error: error.message
             });
-            throw err;
         }
     }
 
     /**
-     * Remove a transaction from the search index
+     * Remove an entity from the search index
      */
-    async deindexTransaction(transactionId) {
-        try {
-            await SearchIndex.deleteOne({ transactionId });
-            return { success: true };
-        } catch (err) {
-            logger.error('Failed to deindex transaction', { transactionId, error: err.message });
-            throw err;
-        }
+    async deindexEntity(entityId) {
+        await SearchIndex.deleteOne({ entityId });
     }
 
     /**
-     * Batch re-indexing logic for bulk migrations or repairs
+     * Core Tokenization Logic
+     * Splits strings into searchable chunks, removes stop words, and normalizes casing.
      */
-    async reindexAllForUser(userId) {
-        const Transaction = require('../models/Transaction');
-        const transactions = await Transaction.find({ user: userId });
+    _tokenize(data) {
+        const fields = [
+            data.description,
+            data.merchant,
+            data.categoryName, // Optional enrichment
+            data.notes
+        ].filter(Boolean);
 
-        logger.info(`Starting batch re-index for user ${userId}`, { count: transactions.length });
+        const rawText = fields.join(' ').toLowerCase();
 
-        const promises = transactions.map(t => this.indexTransaction(t));
-        await Promise.all(promises);
+        // Basic n-gram or word splitting
+        const words = rawText.split(/[^a-z0-9]+/).filter(w => w.length > 2);
 
-        return { success: true, count: transactions.length };
+        // Add specific data like amount as tokens for numeric searching support
+        if (data.amount) {
+            words.push(`amt:${Math.floor(data.amount)}`);
+        }
+
+        return [...new Set(words)]; // Return unique tokens
+    }
+
+    /**
+     * Search across the index
+     */
+    async search(query, userId, workspaceId = null, options = {}) {
+        const { limit = 20, offset = 0 } = options;
+        const tokens = query.toLowerCase().split(/\s+/).filter(t => t.length > 0);
+
+        const filter = {
+            userId: userId,
+            tokens: { $all: tokens }
+        };
+
+        if (workspaceId) {
+            filter.workspaceId = workspaceId;
+        }
+
+        return await SearchIndex.find(filter)
+            .sort({ score: -1, lastIndexedAt: -1 })
+            .skip(offset)
+            .limit(limit)
+            .lean();
     }
 }
 

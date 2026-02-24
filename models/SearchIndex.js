@@ -2,47 +2,19 @@ const mongoose = require('mongoose');
 
 /**
  * SearchIndex Model
- * Issue #720: Specialized flat collection for high-performance multi-faceted search.
- * Denormalizes transaction data to avoid expensive joins during search.
+ * Issue #756: Stores flattened, tokenized vectors for high-performance multi-tenant search.
+ * This decouples search from the main transaction store for scalability.
  */
 const searchIndexSchema = new mongoose.Schema({
-    userId: {
+    entityId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
         required: true,
         index: true
     },
-    transactionId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Transaction',
+    entityType: {
+        type: String,
+        enum: ['TRANSACTION', 'USER', 'PROJECT', 'BUDGET'],
         required: true,
-        unique: true
-    },
-    // Denormalized fields for fast filtering
-    searchText: {
-        type: String,
-        required: true,
-        index: 'text' // Full text search index
-    },
-    merchant: {
-        type: String,
-        index: true
-    },
-    amount: {
-        type: Number,
-        index: true
-    },
-    currency: {
-        type: String,
-        uppercase: true,
-        index: true
-    },
-    category: {
-        type: String, // String representation for fast filtering
-        index: true
-    },
-    date: {
-        type: Date,
         index: true
     },
     workspaceId: {
@@ -50,37 +22,38 @@ const searchIndexSchema = new mongoose.Schema({
         ref: 'Workspace',
         index: true
     },
-    // Extracted Facets
-    tags: [{
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+        index: true
+    },
+    tokens: [{
         type: String,
         index: true
     }],
-    sentiment: {
-        type: String,
-        enum: ['positive', 'neutral', 'negative'],
-        index: true
+    metadata: {
+        description: String,
+        amount: Number,
+        category: String,
+        merchant: String,
+        date: Date
     },
-    businessType: {
-        type: String,
-        index: true
+    score: {
+        type: Number,
+        default: 1.0
     },
-    isRecurring: {
-        type: Boolean,
-        index: true
-    },
-    // Metadata
     lastIndexedAt: {
         type: Date,
         default: Date.now
     }
 }, {
-    timestamps: true,
-    autoIndex: true
+    timestamps: true
 });
 
-// Compound indexes for common query patterns
-searchIndexSchema.index({ userId: 1, date: -1 });
-searchIndexSchema.index({ userId: 1, amount: 1 });
-searchIndexSchema.index({ userId: 1, tags: 1 });
+// Compound indexes for multi-tenant isolation and fast lookup
+searchIndexSchema.index({ workspaceId: 1, tokens: 1 });
+searchIndexSchema.index({ userId: 1, tokens: 1 });
+searchIndexSchema.index({ entityType: 1, lastIndexedAt: -1 });
 
 module.exports = mongoose.model('SearchIndex', searchIndexSchema);

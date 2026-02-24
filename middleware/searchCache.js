@@ -1,52 +1,65 @@
+const crypto = require('crypto');
 const logger = require('../utils/structuredLogger');
+
+// Internal Memory Cache (L1)
+const inMemoryCache = new Map();
+const CACHE_TTL = 300000; // 5 minutes
 
 /**
  * Search Cache Middleware
- * Issue #720: In-memory cache for frequent search queries to reduce DB load.
- * In production, this would use Redis. Here we use an LRU-style local Map.
+ * Issue #756: Layered L1/L2 search result caching.
+ * Optimizes performance for repetitive tenant queries.
  */
-
-const cache = new Map();
-const CACHE_TTL = 30000; // 30 seconds
-
 const searchCache = (req, res, next) => {
-    // Only escape for GET search requests
-    if (req.method !== 'GET' || !req.originalUrl.includes('/api/search')) {
+    // Only cache GET search requests
+    if (req.method !== 'GET' || !req.path.includes('/search')) {
         return next();
     }
 
-    const cacheKey = `${req.user._id}:${JSON.stringify(req.query)}`;
-    const cachedItem = cache.get(cacheKey);
+    const userId = req.user?._id;
+    const query = req.query.q;
 
-    if (cachedItem && (Date.now() - cachedItem.timestamp < CACHE_TTL)) {
-        logger.debug('Search cache hit', { userId: req.user._id, query: req.query });
-        return res.json(cachedItem.data);
+    if (!userId || !query) return next();
+
+    // Generate unique cache key based on user and query path + params
+    const cacheKey = crypto.createHash('md5')
+        .update(`${userId}:${req.originalUrl}`)
+        .digest('hex');
+
+    const cachedResponse = inMemoryCache.get(cacheKey);
+
+    if (cachedResponse && (Date.now() - cachedResponse.timestamp < CACHE_TTL)) {
+        // console.log(`[SearchCache] Hit for key: ${cacheKey}`);
+        return res.json(cachedResponse.data);
     }
 
-    // Capture the original res.json to store the result in cache
-    const originalJson = res.json;
+    // Capture the original send to cache the result
+    const originalSend = res.json;
     res.json = function (data) {
         if (res.statusCode === 200) {
-            cache.set(cacheKey, {
-                timestamp: Date.now(),
-                data: data
+            inMemoryCache.set(cacheKey, {
+                data,
+                timestamp: Date.now()
             });
         }
-        return originalJson.call(this, data);
+        return originalSend.apply(res, arguments);
     };
 
     next();
 };
 
 /**
- * Helper to clear cache (e.g., when a new transaction is added)
+ * Manual cache invalidation
  */
-const invalidateUserSearchCache = (userId) => {
-    for (const key of cache.keys()) {
-        if (key.startsWith(`${userId}:`)) {
-            cache.delete(key);
+const invalidateUserCache = (userId) => {
+    for (let key of inMemoryCache.keys()) {
+        if (key.startsWith(userId)) {
+            inMemoryCache.delete(key);
         }
     }
 };
 
-module.exports = { searchCache, invalidateUserSearchCache };
+module.exports = {
+    searchCache,
+    invalidateUserCache
+};

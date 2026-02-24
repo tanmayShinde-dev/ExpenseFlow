@@ -95,6 +95,7 @@ class TransactionService {
 
         if (typeof transaction.logStep === 'function') {
             await transaction.logStep('persistence', 'success', 'Transaction record created and recorded in immutable ledger');
+            await transaction.logStep('indexing', 'pending', 'Asynchronous search index update triggered');
         }
 
         return transaction;

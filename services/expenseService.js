@@ -125,6 +125,13 @@ class ExpenseService {
             lastLedgerEventId: event._id
         });
 
+        // Issue #756: Explicit Indexing for Search Discovery
+        // This ensures categories and merchant data are immediately searchable
+        const indexingEngine = require('./indexingEngine');
+        setImmediate(() => {
+            indexingEngine.indexEntity('EXPENSE', expense, userId, finalData.workspace);
+        });
+
         // 6. Handle Approvals (fallback for non-policy workspace expenses)
         if (finalData.workspace && !finalData.requiresApproval) {
             const requiresApproval = await approvalService.requiresApproval(finalData, finalData.workspace);
