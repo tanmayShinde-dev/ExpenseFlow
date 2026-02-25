@@ -228,7 +228,11 @@ const userSchema = new mongoose.Schema({
   security: {
     failedLoginAttempts: { type: Number, default: 0 },
     lockoutUntil: { type: Number, default: null },
-    passwordChangedAt: { type: Date }
+    passwordChangedAt: { type: Date },
+    // Issue #755: Forensic Security & Performance Reputation
+    reputationScore: { type: Number, default: 100 },
+    avgResponseLatency: { type: Number, default: 0 },
+    lastForensicAuidt: { type: Date }
   },
 
   // Financial Profile for calculations

@@ -1,63 +1,46 @@
 const express = require('express');
 const router = express.Router();
-const fs = require('fs');
-const path = require('path');
 const auth = require('../middleware/auth');
-const logger = require('../utils/structuredLogger');
+const telemetryAggregator = require('../services/telemetryAggregator');
+const ResponseFactory = require('../utils/responseFactory');
 
 /**
- * Telemetry API
- * Issue #713: Provides visibility into the centralized logging pipeline.
+ * Telemetry Routes
+ * Issue #755: Admin dashboard for global health monitoring and forensic analysis.
  */
 
-router.get('/stats', auth, async (req, res) => {
+/**
+ * @route   GET /api/telemetry/health
+ * @desc    Get system-wide health and latency metrics
+ */
+router.get('/health', auth, async (req, res) => {
+    // Check if user has admin permissions
+    if (req.user.role !== 'admin') {
+        return ResponseFactory.error(res, 403, 'Unauthorized access to telemetry data');
+    }
+
     try {
-        const logDir = path.join(process.cwd(), 'logs');
-        const files = fs.readdirSync(logDir);
-
-        const stats = files.map(file => {
-            const filePath = path.join(logDir, file);
-            const size = fs.statSync(filePath).size;
-            return {
-                level: file.split('.')[0],
-                sizeBytes: size,
-                lastUpdated: fs.statSync(filePath).mtime
-            };
-        });
-
-        res.json({
-            success: true,
-            data: {
-                activeLogs: stats,
-                loggerConfig: {
-                    minLevel: process.env.LOG_LEVEL || 'INFO',
-                    environment: process.env.NODE_ENV || 'development'
-                }
-            }
-        });
-    } catch (err) {
-        logger.error('Failed to retrieve telemetry stats', { error: err.message });
-        res.status(500).json({ success: false, error: 'Failed to access log subsystem' });
+        const stats = await telemetryAggregator.getTenantStats(req.headers['x-tenant-id'] || req.user.tenantId);
+        return ResponseFactory.success(res, stats);
+    } catch (error) {
+        return ResponseFactory.error(res, 500, error.message);
     }
 });
 
-router.get('/tail/:level', auth, async (req, res) => {
-    const { level } = req.params;
-    const logFile = path.join(process.cwd(), 'logs', `${level.toLowerCase()}.log`);
-
-    if (!fs.existsSync(logFile)) {
-        return res.status(404).json({ success: false, error: 'Log level file not found' });
+/**
+ * @route   GET /api/telemetry/security-alerts
+ * @desc    Fetch critical security alerts recorded in the forensic log
+ */
+router.get('/security-alerts', auth, async (req, res) => {
+    if (req.user.role !== 'admin') {
+        return ResponseFactory.error(res, 403, 'Unauthorized');
     }
 
     try {
-        // Simple tail: last 50 lines
-        const content = fs.readFileSync(logFile, 'utf8');
-        const lines = content.trim().split('\n').slice(-50);
-        const logs = lines.map(line => JSON.parse(line));
-
-        res.json({ success: true, data: logs });
-    } catch (err) {
-        res.status(500).json({ success: false, error: 'Failed to read log file' });
+        const alerts = await telemetryAggregator.getSecurityAlerts(50);
+        return ResponseFactory.success(res, alerts);
+    } catch (error) {
+        return ResponseFactory.error(res, 500, error.message);
     }
 });
 

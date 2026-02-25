@@ -2,33 +2,38 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Session = require('../models/Session');
 const SessionAnomalyDetectionService = require('../services/sessionAnomalyDetectionService');
-const { 
-  checkSessionAnomaly, 
-  strictSessionAnomaly 
+const {
+  checkSessionAnomaly,
+  strictSessionAnomaly
 } = require('./sessionAnomalyDetection');
+
+const telemetryAggregator = require('../services/telemetryAggregator');
 
 /**
  * Enhanced Authentication Middleware with Session Tracking
  * Issue #338: Enterprise-Grade Audit Trail & TOTP Security Suite
  * Issue #562: Session Anomaly Detection via IP/UA Drift
+ * Issue #755: Telemetry Forensics Injection
  */
 
 const auth = async (req, res, next) => {
+  // Inject Forensic Trace ID
+  req.traceId = req.header('X-Trace-ID') || crypto.randomUUID();
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    
+
     if (!token) {
       return res.status(401).json({ error: 'Access denied. No token provided.' });
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
     // Validate session if jti is present
     if (decoded.jti) {
       const sessionValidation = await Session.validateSession(decoded.jti);
-      
+
       if (!sessionValidation.valid) {
-        return res.status(401).json({ 
+        return res.status(401).json({
           error: 'Session expired or revoked. Please login again.',
           code: 'SESSION_INVALID'
         });
@@ -37,24 +42,24 @@ const auth = async (req, res, next) => {
       // Attach session info to request
       req.sessionId = sessionValidation.session._id;
       req.jwtId = decoded.jti;
-      
+
       // Update session activity
       sessionValidation.session.activity.lastEndpoint = req.originalUrl;
-      
+
       // Check for session anomalies (IP/UA drift)
       const anomalyCheck = await SessionAnomalyDetectionService.checkSessionAnomaly(
         req.sessionId,
         req
       );
-      
+
       // Handle critical anomalies immediately
       if (anomalyCheck.action === 'FORCE_REAUTH') {
         await SessionAnomalyDetectionService.forceReauthentication(
           req.sessionId,
           `Session anomaly detected: ${anomalyCheck.anomalyType.join(', ')}`
         );
-        
-        return res.status(401).json({ 
+
+        return res.status(401).json({
           error: 'Session security violation detected. Please login again.',
           code: 'SESSION_ANOMALY_DETECTED',
           anomalyDetected: true,
@@ -63,20 +68,20 @@ const auth = async (req, res, next) => {
           requiresReauth: true
         });
       }
-      
+
       // Attach anomaly info to request for downstream processing
       req.sessionAnomaly = anomalyCheck;
     }
-    
+
     const user = await User.findById(decoded.id);
-    
+
     if (!user) {
       return res.status(401).json({ error: 'Invalid token.' });
     }
 
     // Check if account is locked
     if (user.isLocked && user.isLocked()) {
-      return res.status(423).json({ 
+      return res.status(423).json({
         error: 'Account is locked. Please try again later.',
         code: 'ACCOUNT_LOCKED'
       });
@@ -86,13 +91,13 @@ const auth = async (req, res, next) => {
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Token expired. Please login again.',
         code: 'TOKEN_EXPIRED'
       });
     }
     if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Invalid token.',
         code: 'TOKEN_INVALID'
       });
@@ -107,7 +112,7 @@ const auth = async (req, res, next) => {
 const require2FA = async (req, res, next) => {
   try {
     const user = req.user;
-    
+
     // If 2FA is not enabled, allow access
     if (!user.twoFactorAuth?.enabled) {
       return next();
@@ -121,10 +126,10 @@ const require2FA = async (req, res, next) => {
     // Check if session has verified TOTP recently (within 15 minutes)
     if (req.sessionId) {
       const session = await Session.findById(req.sessionId);
-      
+
       if (session?.security?.totpVerified) {
         const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
-        
+
         if (session.security.totpVerifiedAt > fifteenMinutesAgo) {
           return next();
         }
@@ -150,7 +155,7 @@ const verify2FAToken = async (req, res, next) => {
   try {
     const user = req.user;
     const totpToken = req.header('X-TOTP-Token') || req.body.totpToken;
-    
+
     // If 2FA is not enabled, allow access
     if (!user.twoFactorAuth?.enabled) {
       return next();
@@ -167,7 +172,7 @@ const verify2FAToken = async (req, res, next) => {
     // Import security service to verify
     const SecurityService = require('../services/securityService');
     const verification = await SecurityService.verifyToken(user._id, totpToken, req);
-    
+
     if (!verification.valid) {
       return res.status(403).json({
         error: 'Invalid 2FA token',
@@ -196,19 +201,19 @@ const verify2FAToken = async (req, res, next) => {
 const optionalAuth = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    
+
     if (!token) {
       return next();
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.id);
-    
+
     if (user) {
       req.user = user;
       req.jwtId = decoded.jti;
     }
-    
+
     next();
   } catch (error) {
     // Token invalid, but optional - continue without user
