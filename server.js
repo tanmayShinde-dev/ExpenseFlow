@@ -85,6 +85,7 @@ async function connectDatabase() {
         require('./jobs/conflictCleaner').start();
         require('./jobs/logRotator').start();
         require('./jobs/searchIndexer').start();
+        require('./jobs/searchPruner').start();
         require('./jobs/conflictPruner').start();
         require('./jobs/liquidityAnalyzer').start();
         require('./jobs/policyAuditor').start();
@@ -125,6 +126,7 @@ app.use('/api/taxonomy', require('./routes/taxonomy'));
 app.use('/api/sync', require('./routes/sync'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/ledger', require('./routes/ledger'));
+app.use('/api/search', require('./routes/search'));
 
 app.use('/api/telemetry', require('./routes/telemetry'));
 app.use('/api/jobs', require('./routes/jobs'));

@@ -202,14 +202,16 @@ class ExpenseRepository extends BaseRepository {
     }
 
     /**
-     * Search expenses by description
+     * Search expenses using the Indexing Engine
+     * Issue #756: Redirects search to the flattened search index for efficiency.
      */
     async search(userId, searchTerm, options = {}) {
-        const query = {
-            user: userId,
-            description: { $regex: searchTerm, $options: 'i' }
-        };
-        return await this.findAll(query, options);
+        const indexingEngine = require('../services/indexingEngine');
+        const results = await indexingEngine.search(searchTerm, userId, options.workspaceId, options);
+
+        // Convert search index results back to Expense documents if needed
+        const entityIds = results.map(r => r.entityId);
+        return await this.findAll({ _id: { $in: entityIds } }, options);
     }
 
     /**

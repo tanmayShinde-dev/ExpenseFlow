@@ -303,6 +303,20 @@ const userSchema = new mongoose.Schema({
     lastAnalysisRun: {
       type: Date
     }
+  },
+
+  // Issue #756: Federated Search Analytics
+  searchAnalytics: {
+    history: [{
+      query: String,
+      timestamp: { type: Date, default: Date.now },
+      resultCount: Number
+    }],
+    relevanceWeights: {
+      category: { type: Number, default: 1.0 },
+      merchant: { type: Number, default: 1.0 },
+      description: { type: Number, default: 1.2 }
+    }
   }
 }, {
   timestamps: true

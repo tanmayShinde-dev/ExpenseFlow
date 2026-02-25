@@ -270,4 +270,23 @@ transactionSchema.virtual('history', {
     foreignField: 'entityId'
 });
 
+// Issue #756: Automatic Search Indexing Hooks
+transactionSchema.post('save', async function (doc) {
+    try {
+        const indexingEngine = require('../services/indexingEngine');
+        await indexingEngine.indexEntity('TRANSACTION', doc, doc.user, doc.workspace);
+    } catch (err) {
+        console.error('Indexing failed on save:', err);
+    }
+});
+
+transactionSchema.post('remove', async function (doc) {
+    try {
+        const indexingEngine = require('../services/indexingEngine');
+        await indexingEngine.deindexEntity(doc._id);
+    } catch (err) {
+        console.error('Deindexing failed on remove:', err);
+    }
+});
+
 module.exports = mongoose.model('Transaction', transactionSchema);
