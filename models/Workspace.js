@@ -143,6 +143,9 @@ const workspaceSchema = new mongoose.Schema({
   // Issue #741: Atomic Invalidation Tracking
   cacheEpoch: { type: Number, default: 0 },
 
+  // Issue #769: Distributed Write-Ahead Journaling
+  journalVersionEpoch: { type: Number, default: 0 },
+
   // Hierarchy fields (#629)
   parentWorkspace: {
     type: mongoose.Schema.Types.ObjectId,

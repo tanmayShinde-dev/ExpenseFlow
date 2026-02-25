@@ -53,6 +53,12 @@ class TransactionService {
         // Stage 1: Pre-processing & Persistence
         const transaction = await this._persistTransaction(rawData, userId);
 
+        if (transaction.deferred) {
+            // Processing is handed off to JournalApplier background job
+            if (io) io.to(`user_${userId}`).emit('transaction_journaled', { id: transaction._id });
+            return transaction;
+        }
+
         // Stage 2: Asynchronous Multi-Stage Pipeline
         this._runProcessingPipeline(transaction, userId, io).catch(err => {
             console.error(`[TransactionService] Critical failure in pipeline for ${transaction._id}:`, err);
@@ -79,6 +85,29 @@ class TransactionService {
         };
 
         const transaction = new Transaction(finalData);
+
+        // Issue #769: Distributed Journaling Interception
+        if (finalData.workspace) {
+            const WriteJournal = require('../models/WriteJournal');
+            const journal = await WriteJournal.create({
+                entityId: transaction._id,
+                entityType: 'TRANSACTION',
+                operation: 'CREATE',
+                payload: finalData,
+                vectorClock: finalData.vectorClock || {},
+                workspaceId: finalData.workspace,
+                userId: userId,
+                status: 'PENDING'
+            });
+
+            return {
+                ...transaction.toObject(),
+                status: 'journaled',
+                journalId: journal._id,
+                deferred: true
+            };
+        }
+
         await transaction.save();
 
         // Issue #738: Record Event in Ledger

@@ -97,8 +97,30 @@ class ExpenseService {
             }
         }
 
-        // 5. Save Expense
-        const expense = await expenseRepository.create(finalData);
+        // 5. Save Expense (with Journaling support for collaborative workspaces)
+        const isDeferred = !!finalData.workspace;
+        const expense = await expenseRepository.create(finalData, {
+            deferred: isDeferred,
+            workspaceId: finalData.workspace,
+            userId
+        });
+
+        // 6. Handle deferred result
+        if (expense.deferred) {
+            // Optimistic response for collaborative environments
+            if (io) {
+                io.to(`user_${userId}`).emit('expense_journaled', {
+                    entityId: expense.journalId,
+                    status: 'optimistic_pending'
+                });
+            }
+            return {
+                ...finalData,
+                _id: expense.journalId,
+                status: 'journaled',
+                optimistic: true
+            };
+        }
 
         // Issue #738: Immutable Ledger Event
         const event = await ledgerService.recordEvent(

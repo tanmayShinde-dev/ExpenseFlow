@@ -1,80 +1,42 @@
 /**
  * Diff Engine Utility
- * Issue #731: Logic to compare two JSON objects and extract modified fields.
- * Essential for forensic audit trails and "Time Travel" logic.
+ * Issue #769: Calculating patch deltas between pending and current states.
  */
-
 class DiffEngine {
     /**
-     * Compares two objects and returns the delta
-     * @param {Object} before - Original state
-     * @param {Object} after - New state
-     * @returns {Object} An object containing changed fields with old and new values
+     * Compare two objects and return only the changes
      */
-    compare(before, after) {
-        const diff = {};
-
-        // Normalize objects to plain JSON
-        const b = JSON.parse(JSON.stringify(before || {}));
-        const a = JSON.parse(JSON.stringify(after || {}));
-
-        // Get all unique keys
-        const keys = new Set([...Object.keys(b), ...Object.keys(a)]);
+    static calculateDelta(current, pending) {
+        const delta = {};
+        const keys = new Set([...Object.keys(current), ...Object.keys(pending)]);
 
         for (const key of keys) {
-            // Ignore internal Mongoose fields
-            if (key === '__v' || key === 'updatedAt' || key === 'createdAt') continue;
+            // Ignore internal mongoose fields
+            if (key.startsWith('_') || key === 'createdAt' || key === 'updatedAt') continue;
 
-            const valB = b[key];
-            const valA = a[key];
+            const val1 = current[key];
+            const val2 = pending[key];
 
-            if (this._isDifferent(valB, valA)) {
-                diff[key] = {
-                    old: valB,
-                    new: valA
+            if (JSON.stringify(val1) !== JSON.stringify(val2)) {
+                delta[key] = {
+                    old: val1,
+                    new: val2
                 };
             }
         }
-
-        return Object.keys(diff).length > 0 ? diff : null;
+        return delta;
     }
 
     /**
-     * Deep equality check for primitives and simple objects/arrays
+     * Apply a delta patch to an object
      */
-    _isDifferent(a, b) {
-        if (a === b) return false;
-
-        // Handle null/undefined cases
-        if (a == null || b == null) return a !== b;
-
-        // Handle Dates
-        if (a instanceof Date && b instanceof Date) {
-            return a.getTime() !== b.getTime();
+    static applyPatch(base, patch) {
+        const result = { ...base };
+        for (const [key, change] of Object.entries(patch)) {
+            result[key] = change.new;
         }
-
-        // Handle Arrays and Objects (simplified for this engine)
-        if (typeof a === 'object' && typeof b === 'object') {
-            return JSON.stringify(a) !== JSON.stringify(b);
-        }
-
-        return a !== b;
-    }
-
-    /**
-     * Reconstructs an object from a history of diffs (Time Travel)
-     */
-    reconstruct(base, diffs) {
-        let state = JSON.parse(JSON.stringify(base));
-
-        for (const diff of diffs) {
-            for (const [key, delta] of Object.entries(diff)) {
-                state[key] = delta.new;
-            }
-        }
-
-        return state;
+        return result;
     }
 }
 
-module.exports = new DiffEngine();
+module.exports = DiffEngine;
