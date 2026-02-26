@@ -70,6 +70,15 @@ const financialEventSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Workspace',
         index: true
+    },
+    forensicTraceId: {
+        type: String,
+        index: true // Links event to original HTTP request
+    },
+    chainId: {
+        type: String,
+        default: 'v1',
+        index: true
     }
 }, {
     timestamps: false // We use our own timestamp

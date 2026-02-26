@@ -52,6 +52,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(require('./middleware/encryptionInterceptor'));
 app.use(require('./middleware/validationInterceptor'));
 app.use(require('./middleware/auditInterceptor'));
+app.use(require('./middleware/auditTraceability'));
 app.use(require('./middleware/tenantResolver'));
 app.use(require('./middleware/leakageGuard'));
 app.use(require('./middleware/liquidityGuard'));
@@ -97,6 +98,7 @@ async function connectDatabase() {
         require('./jobs/policyAuditor').start();
         require('./jobs/journalApplier').start();
         require('./jobs/metricFlusher').start();
+        require('./jobs/integrityAuditor').start();
         require('./jobs/keyRotator').start();
 
 
@@ -138,6 +140,7 @@ app.use('/api/ledger', require('./routes/ledger'));
 app.use('/api/treasury', require('./routes/treasury'));
 app.use('/api/search', require('./routes/search'));
 app.use('/api/conflicts', require('./routes/conflicts'));
+app.use('/api/forensics', require('./routes/forensics'));
 
 app.use('/api/telemetry', require('./routes/telemetry'));
 app.use('/api/vault', require('./routes/vault'));
