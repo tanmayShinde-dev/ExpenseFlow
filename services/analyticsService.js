@@ -32,8 +32,8 @@ class AnalyticsService {
     async _getScopedKey(type, userId, params, workspaceId = null) {
         let epoch = 0;
         if (workspaceId) {
-            const ws = await Workspace.findById(workspaceId).select('cacheEpoch');
-            epoch = ws ? ws.cacheEpoch : 0;
+            const ws = await Workspace.findById(workspaceId).select('epochSequence');
+            epoch = ws ? ws.epochSequence : 0;
         }
         const paramStr = JSON.stringify(params);
         const key = `analytics:${type}:${userId}:${workspaceId || 'global'}:v${epoch}:${paramStr}`;
@@ -219,7 +219,8 @@ class AnalyticsService {
         const { months = 6, useCache = true } = options;
 
         if (useCache) {
-            const cached = await AnalyticsCache.getCache('volatility_analysis', userId, { months });
+            const cacheKey = await this._getScopedKey('volatility_analysis', userId, { months }, options.workspaceId);
+            const cached = await multiTierCache.get(cacheKey);
             if (cached) return cached;
         }
 
@@ -333,7 +334,8 @@ class AnalyticsService {
         };
 
         if (useCache) {
-            await AnalyticsCache.setCache('volatility_analysis', userId, { months }, result, 60);
+            const cacheKey = await this._getScopedKey('volatility_analysis', userId, { months }, options.workspaceId);
+            await multiTierCache.set(cacheKey, result, 60);
         }
 
         return result;
@@ -350,8 +352,9 @@ class AnalyticsService {
 
         // Check cache
         if (useCache) {
-            const cached = await AnalyticsCache.getCache(CACHE_KEYS.SPENDING_TRENDS
-                , userId, { period, months });
+            const cacheKey = await this._getScopedKey(CACHE_KEYS.SPENDING_TRENDS
+                , userId, { period, months }, options.workspaceId);
+            const cached = await multiTierCache.get(cacheKey);
             if (cached) return cached;
         }
 
@@ -445,8 +448,9 @@ class AnalyticsService {
 
         // Cache result
         if (useCache) {
-            await AnalyticsCache.setCache(CACHE_KEYS.SPENDING_TRENDS
-                , userId, { period, months }, result, CACHE_TTL.MEDIUM);
+            const cacheKey = await this._getScopedKey(CACHE_KEYS.SPENDING_TRENDS
+                , userId, { period, months }, options.workspaceId);
+            await multiTierCache.set(cacheKey, result, CACHE_TTL.MEDIUM);
         }
 
         return result;
@@ -502,7 +506,8 @@ class AnalyticsService {
         };
 
         if (useCache) {
-            const cached = await AnalyticsCache.getCache(CACHE_KEYS.CATEGORY_BREAKDOWN, userId, cacheParams);
+            const cacheKey = await this._getScopedKey(CACHE_KEYS.CATEGORY_BREAKDOWN, userId, cacheParams, options.workspaceId);
+            const cached = await multiTierCache.get(cacheKey);
             if (cached) return cached;
         }
 
@@ -550,7 +555,8 @@ class AnalyticsService {
         };
 
         if (useCache) {
-            await AnalyticsCache.setCache(CACHE_KEYS.CATEGORY_BREAKDOWN, userId, cacheParams, result, CACHE_TTL.SHORT);
+            const cacheKey = await this._getScopedKey(CACHE_KEYS.CATEGORY_BREAKDOWN, userId, cacheParams, options.workspaceId);
+            await multiTierCache.set(cacheKey, result, CACHE_TTL.SHORT);
         }
 
         return result;
@@ -563,7 +569,8 @@ class AnalyticsService {
         const { months = 3, useCache = true } = options;
 
         if (useCache) {
-            const cached = await AnalyticsCache.getCache(CACHE_KEYS.MONTHLY_COMPARISON, userId, { months });
+            const cacheKey = await this._getScopedKey(CACHE_KEYS.MONTHLY_COMPARISON, userId, { months }, options.workspaceId);
+            const cached = await multiTierCache.get(cacheKey);
             if (cached) return cached;
         }
 
@@ -623,7 +630,8 @@ class AnalyticsService {
         const result = { comparisons };
 
         if (useCache) {
-            await AnalyticsCache.setCache(CACHE_KEYS.MONTHLY_COMPARISON, userId, { months }, result, CACHE_TTL.MEDIUM);
+            const cacheKey = await this._getScopedKey(CACHE_KEYS.MONTHLY_COMPARISON, userId, { months }, options.workspaceId);
+            await multiTierCache.set(cacheKey, result, CACHE_TTL.MEDIUM);
         }
 
         return result;
@@ -671,7 +679,8 @@ class AnalyticsService {
         const { useCache = true } = options;
 
         if (useCache) {
-            const cached = await AnalyticsCache.getCache(CACHE_KEYS.INSIGHTS, userId, {});
+            const cacheKey = await this._getScopedKey(CACHE_KEYS.INSIGHTS, userId, {}, options.workspaceId);
+            const cached = await multiTierCache.get(cacheKey);
             if (cached) return cached;
         }
 
@@ -841,7 +850,8 @@ class AnalyticsService {
         };
 
         if (useCache) {
-            await AnalyticsCache.setCache(CACHE_KEYS.INSIGHTS, userId, {}, result, CACHE_TTL.LONG);
+            const cacheKey = await this._getScopedKey(CACHE_KEYS.INSIGHTS, userId, {}, options.workspaceId);
+            await multiTierCache.set(cacheKey, result, CACHE_TTL.LONG);
         }
 
         return result;
@@ -854,7 +864,8 @@ class AnalyticsService {
         const { useCache = true } = options;
 
         if (useCache) {
-            const cached = await AnalyticsCache.getCache(CACHE_KEYS.PREDICTIONS, userId, {});
+            const cacheKey = await this._getScopedKey(CACHE_KEYS.PREDICTIONS, userId, {}, options.workspaceId);
+            const cached = await multiTierCache.get(cacheKey);
             if (cached) return cached;
         }
 
@@ -918,7 +929,8 @@ class AnalyticsService {
         };
 
         if (useCache) {
-            await AnalyticsCache.setCache(CACHE_KEYS.PREDICTIONS, userId, {}, result, CACHE_TTL.XLONG);
+            const cacheKey = await this._getScopedKey(CACHE_KEYS.PREDICTIONS, userId, {}, options.workspaceId);
+            await multiTierCache.set(cacheKey, result, CACHE_TTL.XLONG);
         }
 
         return result;
@@ -962,7 +974,8 @@ class AnalyticsService {
         const { useCache = true } = options;
 
         if (useCache) {
-            const cached = await AnalyticsCache.getCache('velocity', userId, {});
+            const cacheKey = await this._getScopedKey('velocity', userId, {}, options.workspaceId);
+            const cached = await multiTierCache.get(cacheKey);
             if (cached) return cached;
         }
 
@@ -1004,7 +1017,8 @@ class AnalyticsService {
         };
 
         if (useCache) {
-            await AnalyticsCache.setCache('velocity', userId, {}, result, 15);
+            const cacheKey = await this._getScopedKey('velocity', userId, {}, options.workspaceId);
+            await multiTierCache.set(cacheKey, result, 15);
         }
 
         return result;

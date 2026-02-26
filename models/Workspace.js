@@ -141,7 +141,7 @@ const workspaceSchema = new mongoose.Schema({
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 
   // Issue #741: Atomic Invalidation Tracking
-  cacheEpoch: { type: Number, default: 0 },
+  epochSequence: { type: Number, default: 0 },
 
   // Issue #769: Distributed Write-Ahead Journaling
   journalVersionEpoch: { type: Number, default: 0 },

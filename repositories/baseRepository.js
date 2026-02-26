@@ -71,7 +71,9 @@ class BaseRepository {
         let processedData = await this._encryptSensitiveFields(data);
         const document = new this.model(processedData);
         let saved = await document.save();
+        await this._invalidateCache(saved);
         return await this._decryptSensitiveFields(saved);
+
     }
 
     /**
@@ -137,7 +139,9 @@ class BaseRepository {
         if (options.deferred) {
             return await this._journalMutation('UPDATE', { ...data, _id: id }, options);
         }
-        return await this.model.findByIdAndUpdate(id, data, options);
+        const result = await this.model.findByIdAndUpdate(id, data, options);
+        await this._invalidateCache(result);
+        return result;
     }
 
     /**
@@ -149,7 +153,9 @@ class BaseRepository {
             if (!doc) throw new Error('Document not found for deferred update');
             return await this._journalMutation('UPDATE', { ...data, _id: doc._id }, options);
         }
-        return await this.model.findOneAndUpdate(filters, data, options);
+        const result = await this.model.findOneAndUpdate(filters, data, options);
+        await this._invalidateCache(result);
+        return result;
     }
 
     /**
@@ -166,7 +172,9 @@ class BaseRepository {
         if (options.deferred) {
             return await this._journalMutation('DELETE', { _id: id }, options);
         }
-        return await this.model.findByIdAndDelete(id);
+        const result = await this.model.findByIdAndDelete(id);
+        await this._invalidateCache(result);
+        return result;
     }
 
     /**
@@ -178,7 +186,9 @@ class BaseRepository {
             if (!doc) throw new Error('Document not found for deferred delete');
             return await this._journalMutation('DELETE', { _id: doc._id }, options);
         }
-        return await this.model.findOneAndDelete(filters);
+        const result = await this.model.findOneAndDelete(filters);
+        await this._invalidateCache(result);
+        return result;
     }
 
     /**
@@ -281,6 +291,22 @@ class BaseRepository {
             status: 'PENDING'
         });
         return { journalId: journal._id, status: 'JOURNALED', deferred: true };
+    }
+
+    /**
+     * Helper: Clear Fiscal Graph Cache Post-Save
+     */
+    async _invalidateCache(doc) {
+        if (!doc) return;
+        const workspaceId = doc.workspace || doc.workspaceId || doc.tenantId;
+        if (workspaceId) {
+            try {
+                const invalidationEngine = require('../services/invalidationEngine');
+                await invalidationEngine.invalidateGraph(workspaceId);
+            } catch (err) {
+                console.error('[BaseRepository] Fast-fail on Cache Invalidation:', err.message);
+            }
+        }
     }
 }
 

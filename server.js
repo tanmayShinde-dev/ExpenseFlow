@@ -99,6 +99,7 @@ async function connectDatabase() {
         require('./jobs/journalApplier').start();
         require('./jobs/metricFlusher').start();
         require('./jobs/integrityAuditor').start();
+        require('./jobs/cachePruner').start();
         require('./jobs/keyRotator').start();
 
 
