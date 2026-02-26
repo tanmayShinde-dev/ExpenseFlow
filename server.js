@@ -54,6 +54,9 @@ app.use(require('./middleware/validationInterceptor'));
 app.use(require('./middleware/auditInterceptor'));
 app.use(require('./middleware/auditTraceability'));
 app.use(require('./middleware/tenantResolver'));
+// Inject Circuit Breaker protection early in the pipeline
+// We pass 'TRANSACTION' as a default, though specific routers might override it
+app.use(require('./middleware/complianceGuard')('TRANSACTION'));
 app.use(require('./middleware/leakageGuard'));
 app.use(require('./middleware/liquidityGuard'));
 app.use(require('./middleware/balanceGuard'));
@@ -100,6 +103,7 @@ async function connectDatabase() {
         require('./jobs/metricFlusher').start();
         require('./jobs/integrityAuditor').start();
         require('./jobs/cachePruner').start();
+        require('./jobs/velocityCalculator').start();
         require('./jobs/keyRotator').start();
 
 

@@ -50,6 +50,25 @@ class TransactionService {
      * Entry point for transaction creation
      */
     async createTransaction(rawData, userId, io) {
+        // Issue #780: Pre-commit compliance hook
+        if (rawData.workspace) {
+            const complianceOrchestrator = require('./complianceOrchestrator');
+            const evaluation = await complianceOrchestrator.evaluate(
+                rawData.workspace,
+                'TRANSACTION',
+                rawData,
+                { user: userId, action: 'CREATE' }
+            );
+
+            if (!evaluation.allowed && ['DENY', 'FREEZE'].includes(evaluation.action)) {
+                throw new Error(`Compliance Policy Violation: ${evaluation.reason}`);
+            }
+
+            if (evaluation.action === 'FLAG') {
+                rawData.complianceFlag = evaluation.policyId;
+            }
+        }
+
         // Stage 1: Pre-processing & Persistence
         const transaction = await this._persistTransaction(rawData, userId);
 

@@ -69,15 +69,27 @@ router.get('/effective-policy/:workspaceId', auth, async (req, res) => {
 
 /**
  * @route   POST /api/governance/policies
- * @desc    Create or update a policy node
+ * @desc    Create or update a policy node for Circuit Breakers
  */
 router.post('/policies', auth, async (req, res) => {
     try {
-        const node = await PolicyNode.findOneAndUpdate(
-            { level: req.body.level, targetId: req.body.targetId },
-            req.body,
-            { upsert: true, new: true }
-        );
+        const { workspaceId, name, conditions, action, targetResource, priority, isInheritable } = req.body;
+
+        let node;
+        if (workspaceId) {
+            node = await PolicyNode.findOneAndUpdate(
+                { workspaceId, name },
+                { description: req.body.description, conditions, action, targetResource, priority, isInheritable },
+                { upsert: true, new: true }
+            );
+        } else {
+            node = await PolicyNode.findOneAndUpdate(
+                { level: req.body.level, targetId: req.body.targetId },
+                req.body,
+                { upsert: true, new: true }
+            );
+        }
+
         res.json({ success: true, data: node });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
