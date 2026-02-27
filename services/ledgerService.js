@@ -45,7 +45,7 @@ class LedgerService {
     /**
      * Record a new event into the ledger
      */
-    async recordEvent(entityId, eventType, payload, userId, workspaceId = null, parentEventId = null, entityType = 'TRANSACTION') {
+    async recordEvent(entityId, eventType, payload, userId, workspaceId = null, parentEventId = null, entityType = 'TRANSACTION', forensicTraceId = null) {
         // 1. Get the last event to chain the hash
         const lastEvent = await FinancialEvent.findOne({ entityId }).sort({ sequence: -1 });
 
@@ -69,6 +69,7 @@ class LedgerService {
             performedBy: userId || '507f1f77bcf86cd799439011', // System user fallback
             workspaceId,
             parentEventId,
+            forensicTraceId,
             timestamp: new Date()
         });
 
