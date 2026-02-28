@@ -31,6 +31,14 @@ const backupService = require('./services/backupService');
 const twoFactorAuthRoutes = require('./routes/twoFactorAuth');
 const cron = require('node-cron');
 
+// Distributed real-time sync dependencies
+const Redis = require('ioredis');
+const redisPub = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+const redisSub = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
+// Redis pub/sub channel for distributed sync
+const SYNC_CHANNEL = 'expenseflow:sync';
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -160,9 +168,46 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Listen for client expense changes and broadcast to Redis
+  socket.on('expense_created', (expense) => {
+    io.emit('expense_created', expense);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_created', expense }));
+  });
+
+  socket.on('expense_updated', (expense) => {
+    io.emit('expense_updated', expense);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_updated', expense }));
+  });
+
+  socket.on('expense_deleted', (data) => {
+    io.emit('expense_deleted', data);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_deleted', data }));
+  });
+
   socket.on('disconnect', () => {
     console.log(`User ${socket.user.name} disconnected`);
   });
+});
+
+// Listen for Redis sync events and broadcast to local clients
+redisSub.subscribe(SYNC_CHANNEL, (err) => {
+  if (err) console.error('Redis subscribe error:', err);
+});
+
+redisSub.on('message', (channel, message) => {
+  if (channel !== SYNC_CHANNEL) return;
+  try {
+    const payload = JSON.parse(message);
+    if (payload.type === 'expense_created') {
+      io.emit('expense_created', payload.expense);
+    } else if (payload.type === 'expense_updated') {
+      io.emit('expense_updated', payload.expense);
+    } else if (payload.type === 'expense_deleted') {
+      io.emit('expense_deleted', payload.data);
+    }
+  } catch (e) {
+    console.error('Redis sync event error:', e);
+  }
 });
 
 // Routes
