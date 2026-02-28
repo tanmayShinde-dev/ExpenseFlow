@@ -1,24 +1,8 @@
 const express = require('express');
-// Global error handlers for unhandled promise rejections and uncaught exceptions
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  // Optionally, perform cleanup or alerting here
-});
-
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception thrown:', err);
-  // Optionally, perform cleanup or alerting here
-});
 const http = require('http');
-const socketIo = require('socket.io');
 const mongoose = require('mongoose');
-const helmet = require('helmet');
 const cors = require('cors');
-const socketAuth = require('./middleware/socketAuth');
-const CronJobs = require('./services/cronJobs');
-const { generalLimiter } = require('./middleware/rateLimiter');
-const { sanitizeInput, sanitizationMiddleware, validateDataTypes } = require('./middleware/sanitizer');
-const securityMonitor = require('./services/securityMonitor');
+const helmet = require('helmet');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -41,132 +25,123 @@ const SYNC_CHANNEL = 'expenseflow:sync';
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
-    methods: ["GET", "POST"],
-    credentials: true
-  }
-});
 
-const PORT = process.env.PORT || 3000;
+// Initialize Asynchronous Listeners (Issue #711)
+require('./listeners/EmailListeners').init();
+require('./listeners/AuditListeners').init();
 
-// Security middleware
+
+/* ================================
+   SECURITY
+================================ */
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrcAttr: ["'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:", "https://res.cloudinary.com"],
-      connectSrc: ["'self'", "https://fonts.googleapis.com", "https://fonts.gstatic.com", "https://api.exchangerate-api.com", "https://api.frankfurter.app", "https://res.cloudinary.com"],
-      fontSrc: ["'self'", "https://cdnjs.cloudflare.com", "https://fonts.gstatic.com"],
-      objectSrc: ["'none'"],
-      mediaSrc: ["'self'"],
-      frameSrc: ["'none'"]
+      connectSrc: [
+        "'self'",
+        "https:",
+        "wss:",
+        "http://localhost:3000",
+        "ws://localhost:3000"
+      ]
     }
-  },
-  crossOriginEmbedderPolicy: false
+  }
 }));
 
-// CORS configuration
-app.use(cors({
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      process.env.FRONTEND_URL
-    ].filter(Boolean);
+/* ================================
+   CORS (VERCEL SAFE)
+================================ */
 
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+app.use(cors({
+  origin: true,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Rate limiting
-app.use(generalLimiter);
+/* ================================
+   BODY PARSER
+================================ */
 
-// Comprehensive input sanitization and validation middleware
-// Issue #461: Missing Input Validation on User Data
-app.use(sanitizationMiddleware);
-app.use(validateDataTypes);
-
-// Security monitoring
-app.use(securityMonitor.blockSuspiciousIPs());
-
-// Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(require('./middleware/encryptionInterceptor'));
+app.use(require('./middleware/validationInterceptor'));
+app.use(require('./middleware/auditInterceptor'));
+app.use(require('./middleware/auditTraceability'));
+app.use(require('./middleware/tenantResolver'));
+// Inject Circuit Breaker protection early in the pipeline
+// We pass 'TRANSACTION' as a default, though specific routers might override it
+app.use(require('./middleware/complianceGuard')('TRANSACTION'));
+app.use(require('./middleware/leakageGuard'));
+app.use(require('./middleware/liquidityGuard'));
+app.use(require('./middleware/balanceGuard'));
+app.use(require('./middleware/governanceGuard'));
+app.use(require('./middleware/journalInterceptor'));
+app.use(require('./middleware/fieldMasker'));
+app.use(require('./middleware/performanceInterceptor'));
+app.use(require('./middleware/leakageMonitor'));
 
-// Static files
-app.use(express.static('public'));
-app.use(express.static('.'));
 
-// Security logging middleware
-app.use((req, res, next) => {
-  const originalSend = res.send;
-  res.send = function (data) {
-    // Log failed requests
-    if (res.statusCode >= 400) {
-      securityMonitor.logSecurityEvent(req, 'suspicious_activity', {
-        statusCode: res.statusCode,
-        response: typeof data === 'string' ? data.substring(0, 200) : 'Non-string response'
-      });
+
+/* ================================
+   DATABASE CONNECTION
+================================ */
+
+async function connectDatabase() {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000
+    });
+
+    console.log('✅ MongoDB connected');
+
+    // Cron jobs only in development
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        const CronJobs = require('./jobs/cronJobs');
+        CronJobs.init();
+
+        require('./jobs/trendAnalyzer').start();
+        require('./jobs/reportScheduler').start();
+        require('./jobs/accessAuditor').start();
+        require('./jobs/forecastRetrainer').start();
+        require('./jobs/taxonomyAuditor').start();
+        require('./jobs/conflictCleaner').start();
+        require('./jobs/logRotator').start();
+        require('./jobs/searchIndexer').start();
+        require('./jobs/searchPruner').start();
+        require('./jobs/conflictPruner').start();
+        require('./jobs/liquidityAnalyzer').start();
+        require('./jobs/liquidityRebalancer').start();
+        require('./jobs/policyAuditor').start();
+        require('./jobs/journalApplier').start();
+        require('./jobs/metricFlusher').start();
+        require('./jobs/integrityAuditor').start();
+        require('./jobs/cachePruner').start();
+        require('./jobs/velocityCalculator').start();
+        require('./jobs/keyRotator').start();
+        require('./jobs/neuralReindexer').start(); // Issue #796: Semantic search re-indexer
+
+
+
+        // Start resilient orchestrator
+        require('./services/jobOrchestrator').start();
+
+
+
+        console.log('✓ Cron jobs initialized');
+      } catch (err) {
+        console.log('Cron jobs skipped:', err.message);
+      }
     }
-    originalSend.call(this, data);
-  };
-  next();
-});
 
-// Make io available to the  routes
-app.set('io', io);
-
-// Make io globally available for notifications
-global.io = io;
-
-// Database connection
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => {
-    console.log('MongoDB connected');
-    // Initialize cron jobs after DB connection (includes backup scheduling)
-    // Issue #462: Automated Backup System for Financial Data
-    CronJobs.init();
-    console.log('✓ Cron jobs initialized (includes backup scheduling)');
-  })
-  .catch(err => console.error('MongoDB connection error:', err));
-
-// Socket.IO authentication
-io.use(socketAuth);
-
-// Socket.IO connection handling
-io.on('connection', (socket) => {
-  console.log(`User ${socket.user.name} connected`);
-
-  // Join user-specific room
-  socket.join(`user_${socket.userId}`);
-
-  // Handle sync requests
-  socket.on('sync_request', async (data) => {
-    try {
-      // Process sync queue for this user
-      const SyncQueue = require('./models/SyncQueue');
-      const pendingSync = await SyncQueue.find({
-        user: socket.userId,
-        processed: false
-      }).sort({ createdAt: 1 });
-
-      socket.emit('sync_data', pendingSync);
-    } catch (error) {
-      socket.emit('sync_error', { error: error.message });
-    }
-  });
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+  }
+}
 
   // Listen for client expense changes and broadcast to Redis
   socket.on('expense_created', (expense) => {
@@ -223,27 +198,66 @@ app.use('/api/currency', require('./routes/currency'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/splits', require('./routes/splits'));
 app.use('/api/workspaces', require('./routes/workspaces'));
-app.use('/api/tax', require('./routes/tax'));
-app.use('/api/backups', backupRoutes); // Issue #462: Backup Management API
-app.use('/api/accounts', require('./routes/accounts'));
-app.use('/api/2fa', require('./middleware/auth'), twoFactorAuthRoutes); // Issue #503: 2FA Management
+app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/export', require('./routes/export'));
+app.use('/api/forecasting', require('./routes/forecasting'));
+app.use('/api/governance', require('./routes/governance'));
+app.use('/api/taxonomy', require('./routes/taxonomy'));
+app.use('/api/sync', require('./routes/sync'));
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/ledger', require('./routes/ledger'));
+app.use('/api/treasury', require('./routes/treasury'));
+app.use('/api/search', require('./routes/search'));
+app.use('/api/conflicts', require('./routes/conflicts'));
+app.use('/api/forensics', require('./routes/forensics'));
 
-// Express error handler middleware (must be after all routes)
-app.use((err, req, res, next) => {
-  console.error('Express route error:', err);
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || 'Internal Server Error',
-    error: process.env.NODE_ENV === 'production' ? undefined : err.stack
-  });
-});
+app.use('/api/telemetry', require('./routes/telemetry'));
+app.use('/api/vault', require('./routes/vault'));
+app.use('/api/jobs', require('./routes/jobs'));
 
-// Root route to serve the UI
+
+
+
+
+
+/* ================================
+   STATIC FILES (ONLY DEV)
+================================ */
+
+if (process.env.NODE_ENV !== 'production') {
+  const path = require('path');
+  app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+}
+
+/* ================================
+   HEALTH CHECK
+================================ */
+
 app.get('/', (req, res) => {
-  res.sendFile(require('path').join(__dirname, 'public', 'index.html'));
+  res.json({ status: 'Server running 🚀' });
 });
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log('Security features enabled: Rate limiting, Input sanitization, Security headers');
-});
+/* ================================
+   ERROR HANDLER
+================================ */
+
+app.use(require('./middleware/globalErrorHandler'));
+
+/* ================================
+   SERVER START (ONLY DEV)
+================================ */
+
+const PORT = process.env.PORT || 5000;
+
+if (process.env.NODE_ENV !== 'production') {
+  server.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
+}
+
+/* ================================
+   EXPORT FOR VERCEL
+================================ */
+
+module.exports = app;
+
