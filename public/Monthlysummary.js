@@ -345,4 +345,28 @@
     /* ========= INIT ========= */
     typeSelect.onchange = loadPeriods;
     loadPeriods();
+  const toggleBtn = document.getElementById("themeToggle");
+  const html = document.documentElement;
 
+  // Load saved theme
+  const savedTheme = localStorage.getItem("theme");
+  if (savedTheme) {
+    html.setAttribute("data-theme", savedTheme);
+    updateIcon(savedTheme);
+  }
+
+  toggleBtn.addEventListener("click", () => {
+    const currentTheme = html.getAttribute("data-theme");
+    const newTheme = currentTheme === "light" ? "dark" : "light";
+
+    html.setAttribute("data-theme", newTheme);
+    localStorage.setItem("theme", newTheme);
+    updateIcon(newTheme);
+  });
+
+  function updateIcon(theme) {
+    toggleBtn.innerHTML =
+      theme === "light"
+        ? '<i class="fas fa-sun"></i>'
+        : '<i class="fas fa-moon"></i>';
+  }
