@@ -105,6 +105,7 @@ async function connectDatabase() {
         require('./jobs/cachePruner').start();
         require('./jobs/velocityCalculator').start();
         require('./jobs/keyRotator').start();
+        require('./jobs/neuralReindexer').start(); // Issue #796: Semantic search re-indexer
 
 
 
