@@ -126,6 +126,7 @@ const verify2FA = async (req, res, next) => {
 
       req.user.verified2FA = true;
       req.session.verified2FA = true;
+      req.session.vaultGrant = true; // Issue #770: Session now trusted for vault access
 
       next();
     } catch (error) {
