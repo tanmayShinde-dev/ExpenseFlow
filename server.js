@@ -105,11 +105,7 @@ async function connectDatabase() {
         require('./jobs/cachePruner').start();
         require('./jobs/velocityCalculator').start();
         require('./jobs/keyRotator').start();
-        
-        // Issue #797: Consensus Compliance Engine
-        require('./jobs/consensusReconciler').start();
-        // Issue #798: Nightly Monte Carlo simulation runner
-        require('./jobs/nightlySimRunner').start();
+        require('./jobs/neuralReindexer').start(); // Issue #796: Semantic search re-indexer
 
 
 
