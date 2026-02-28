@@ -103,6 +103,115 @@ class LedgerService {
 
         return { valid: true };
     }
+
+    /**
+     * Record a multi-sig approved event with proof chain
+     * Issue #797: Chaining Multi-Sig proofs into the immutable ledger
+     */
+    async recordMultiSigEvent(entityId, eventType, payload, userId, workspaceId, multiSigProof) {
+        const {
+            operationId,
+            signatures,
+            quorumConfig,
+            approvedAt
+        } = multiSigProof;
+
+        // Create aggregated signature proof
+        const signatureProof = {
+            operationId,
+            quorumM: quorumConfig.m,
+            quorumN: quorumConfig.n,
+            signerCount: signatures.length,
+            signers: signatures.map(sig => ({
+                signerId: sig.signerId,
+                proofType: sig.proofType,
+                signatureHash: sig.signatureHash,
+                signedAt: sig.signedAt
+            })),
+            aggregatedHash: this.calculateAggregatedSignatureHash(signatures),
+            approvedAt
+        };
+
+        // Record the event with embedded multi-sig proof
+        const event = await this.recordEvent(
+            entityId,
+            eventType,
+            {
+                ...payload,
+                multiSigProof: signatureProof
+            },
+            userId,
+            workspaceId,
+            null, // parentEventId
+            'MULTI_SIG_TRANSACTION'
+        );
+
+        console.log(`[Ledger] Multi-sig event recorded: ${eventType} for ${entityId} with ${signatures.length} signatures`);
+
+        return event;
+    }
+
+    /**
+     * Calculate aggregated hash from multiple signatures
+     */
+    calculateAggregatedSignatureHash(signatures) {
+        const crypto = require('crypto');
+        
+        // Sort signatures by signer ID for deterministic ordering
+        const sorted = [...signatures].sort((a, b) => 
+            a.signerId.toString().localeCompare(b.signerId.toString())
+        );
+
+        // Create merkle root of signature hashes
+        let leaves = sorted.map(sig => 
+            crypto.createHash('sha256').update(sig.signatureHash || '').digest('hex')
+        );
+
+        while (leaves.length > 1) {
+            const nextLevel = [];
+            for (let i = 0; i < leaves.length; i += 2) {
+                const left = leaves[i];
+                const right = leaves[i + 1] || left;
+                nextLevel.push(
+                    crypto.createHash('sha256').update(left + right).digest('hex')
+                );
+            }
+            leaves = nextLevel;
+        }
+
+        return leaves[0] || 'EMPTY';
+    }
+
+    /**
+     * Verify multi-sig proof in a ledger event
+     */
+    async verifyMultiSigProof(eventId) {
+        const event = await FinancialEvent.findById(eventId);
+        
+        if (!event || !event.payload?.multiSigProof) {
+            return { valid: false, reason: 'No multi-sig proof found' };
+        }
+
+        const proof = event.payload.multiSigProof;
+
+        // Verify quorum was met
+        if (proof.signerCount < proof.quorumM) {
+            return { valid: false, reason: 'Quorum not met' };
+        }
+
+        // Verify aggregated hash
+        const expectedHash = this.calculateAggregatedSignatureHash(proof.signers);
+        if (expectedHash !== proof.aggregatedHash) {
+            return { valid: false, reason: 'Aggregated signature hash mismatch' };
+        }
+
+        return {
+            valid: true,
+            operationId: proof.operationId,
+            signerCount: proof.signerCount,
+            quorumConfig: { m: proof.quorumM, n: proof.quorumN }
+        };
+    }
 }
 
 module.exports = new LedgerService();

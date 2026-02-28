@@ -3,6 +3,8 @@ const LiquidityThreshold = require('../models/LiquidityThreshold');
 const Transaction = require('../models/Transaction');
 const Account = require('../models/Account');
 const FinancialModels = require('../utils/financialModels');
+const multiSigOrchestrator = require('./multiSigOrchestrator');
+const approvalRepository = require('../repositories/approvalRepository');
 
 class TreasuryService {
     /**
@@ -97,8 +99,11 @@ class TreasuryService {
 
     /**
      * Transfer funds between vaults
+     * Issue #797: Integrated with multi-sig quorum for high-value transfers
      */
-    async transferBetweenVaults(fromVaultId, toVaultId, amount, userId) {
+    async transferBetweenVaults(fromVaultId, toVaultId, amount, userId, options = {}) {
+        const { multiSigOperationId = null, bypassQuorum = false } = options;
+
         const fromVault = await TreasuryVault.findOne({ _id: fromVaultId, userId });
         const toVault = await TreasuryVault.findOne({ _id: toVaultId, userId });
 
@@ -108,6 +113,47 @@ class TreasuryService {
 
         if (fromVault.availableLiquidity < amount) {
             throw new Error('Insufficient liquidity in source vault');
+        }
+
+        // Issue #797: Check if multi-sig is required
+        if (!bypassQuorum) {
+            const workspaceId = fromVault.workspaceId || toVault.workspaceId;
+            const multiSigCheck = await multiSigOrchestrator.requiresMultiSig(
+                workspaceId,
+                amount,
+                'VIRTUAL_TRANSFER'
+            );
+
+            if (multiSigCheck.required) {
+                // If no approved operation ID provided, initiate new multi-sig
+                if (!multiSigOperationId) {
+                    const operation = await multiSigOrchestrator.initiateOperation({
+                        workspaceId,
+                        operationType: 'VIRTUAL_TRANSFER',
+                        payload: { fromVaultId, toVaultId, amount },
+                        amount,
+                        initiatorId: userId
+                    });
+
+                    return {
+                        success: false,
+                        requiresApproval: true,
+                        operationId: operation.operationId,
+                        requiredSignatures: operation.requiredSignatures,
+                        expiresAt: operation.expiresAt,
+                        message: 'Multi-signature approval required for this transfer'
+                    };
+                }
+
+                // Verify the operation is approved
+                const opStatus = await approvalRepository.getOperationStatus(multiSigOperationId);
+                if (!opStatus || opStatus.status !== 'APPROVED') {
+                    throw new Error('Multi-sig operation not approved');
+                }
+
+                // Execute the approved operation
+                await multiSigOrchestrator.executeApprovedOperation(multiSigOperationId, userId);
+            }
         }
 
         // Perform transfer
@@ -121,7 +167,8 @@ class TreasuryService {
             success: true,
             fromVault: fromVault.vaultName,
             toVault: toVault.vaultName,
-            amount
+            amount,
+            multiSigOperationId
         };
     }
 
