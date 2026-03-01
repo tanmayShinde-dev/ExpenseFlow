@@ -15,6 +15,16 @@ const AuditLog = require('../models/AuditLog');
 
 class SessionAnomalyDetectionService {
   /**
+   * Modular risk signal checks for extensibility
+   */
+  static riskSignals = [
+    'ipDrift',
+    'userAgentDrift',
+    'impossibleTravel',
+    'rapidSessionSwitching',
+    // Add more signals here as needed
+  ];
+  /**
    * Configuration for anomaly detection
    */
   static config = {
@@ -48,7 +58,6 @@ class SessionAnomalyDetectionService {
   static async checkSessionAnomaly(sessionId, currentRequest) {
     try {
       const session = await Session.findById(sessionId);
-      
       if (!session) {
         return {
           hasAnomaly: true,
@@ -57,7 +66,6 @@ class SessionAnomalyDetectionService {
           action: 'FORCE_REAUTH'
         };
       }
-
       if (session.status !== 'active') {
         return {
           hasAnomaly: true,
@@ -67,43 +75,45 @@ class SessionAnomalyDetectionService {
         };
       }
 
-      const anomalyTypes = [];
+      // Modular risk signal evaluation
+      const signals = [];
       let riskScore = 0;
-
-      // Extract current request details
       const currentIP = currentRequest.ip || currentRequest.connection?.remoteAddress;
       const currentUA = currentRequest.headers?.['user-agent'];
-      
-      // Check IP address drift
+
+      // IP Drift
       const ipCheck = await this.checkIPDrift(session, currentIP);
       if (ipCheck.isDrift) {
-        anomalyTypes.push('IP_DRIFT');
+        signals.push({ type: 'IP_DRIFT', risk: ipCheck.riskIncrease });
         riskScore += ipCheck.riskIncrease;
       }
 
-      // Check User Agent drift
+      // User Agent Drift
       const uaCheck = await this.checkUserAgentDrift(session, currentUA);
       if (uaCheck.isDrift) {
-        anomalyTypes.push('USER_AGENT_DRIFT');
+        signals.push({ type: 'USER_AGENT_DRIFT', risk: uaCheck.riskIncrease });
         riskScore += uaCheck.riskIncrease;
       }
 
-      // Check for impossible travel (if both IP and location changed)
+      // Impossible Travel
       if (ipCheck.isDrift && session.location) {
         const travelCheck = await this.checkImpossibleTravel(session, currentRequest);
         if (travelCheck.isImpossible) {
-          anomalyTypes.push('IMPOSSIBLE_TRAVEL');
+          signals.push({ type: 'IMPOSSIBLE_TRAVEL', risk: travelCheck.riskIncrease });
           riskScore += travelCheck.riskIncrease;
         }
       }
 
-      // Check for rapid session switching
+      // Rapid Session Switching
       const switchCheck = await this.checkRapidSessionSwitching(session.userId);
       if (switchCheck.isSuspicious) {
-        anomalyTypes.push('RAPID_SESSION_SWITCHING');
+        signals.push({ type: 'RAPID_SESSION_SWITCHING', risk: switchCheck.riskIncrease });
         riskScore += switchCheck.riskIncrease;
       }
 
+      // Future extensibility: add more signals here
+
+      const anomalyTypes = signals.map(s => s.type);
       const hasAnomaly = anomalyTypes.length > 0;
 
       // Determine action based on risk score
@@ -127,7 +137,8 @@ class SessionAnomalyDetectionService {
         hasAnomaly,
         anomalyType: anomalyTypes,
         riskScore,
-        action
+        action,
+        signals // Provide detailed signal breakdown for future analytics
       };
     } catch (error) {
       console.error('Session anomaly check error:', error);

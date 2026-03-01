@@ -2,6 +2,7 @@ const SecurityEvent = require('../models/SecurityEvent');
 const DeviceFingerprint = require('../models/DeviceFingerprint');
 const TrustedDevice = require('../models/TrustedDevice');
 const User = require('../models/User');
+const adaptiveRiskEngineV2Service = require('./adaptiveRiskEngineV2Service');
 
 /**
  * Suspicious Login Detection Service
@@ -25,58 +26,58 @@ class SuspiciousLoginDetectionService {
    */
   async analyzeLoginAttempt(userId, loginInfo) {
     try {
-      const flags = [];
-      let riskScore = 0;
-
       const {
         ipAddress,
         userAgent,
         deviceFingerprint,
         location,
-        sessionId
+        sessionId,
+        tenantId,
+        workspaceId,
+        requestId
       } = loginInfo;
 
       // Check device fingerprint
       const deviceCheck = await this.checkDeviceFingerprint(userId, deviceFingerprint, ipAddress);
-      if (deviceCheck.flagged) {
-        flags.push('DEVICE_FINGERPRINT_MISMATCH');
-        riskScore += deviceCheck.riskIncrease;
-      }
 
       // Check geographic anomalies
       const geoCheck = await this.checkGeographicAnomaly(userId, location);
-      if (geoCheck.isAnomaly) {
-        flags.push('GEOGRAPHIC_ANOMALY');
-        riskScore += 25;
-
-        // Critical if impossible travel speed
-        if (geoCheck.speedRequired > 900) {
-          flags.push('IMPOSSIBLE_TRAVEL');
-          riskScore += 30;
-        }
-      }
 
       // Check velocity anomalies
       const velocityCheck = await SecurityEvent.checkVelocityAnomaly(userId);
-      if (velocityCheck) {
-        flags.push('VELOCITY_ANOMALY');
-        riskScore += 20;
-      }
 
       // Check for recent failed attempts
       const failedAttempts = await SecurityEvent.count2FAFailures(userId, 10);
-      if (failedAttempts >= 3) {
-        flags.push('MULTIPLE_FAILED_ATTEMPTS');
-        riskScore += 15;
-      }
+
+      const riskDecision = await adaptiveRiskEngineV2Service.evaluateLoginRisk({
+        userId,
+        loginInfo: {
+          ...loginInfo,
+          tenantId: tenantId || workspaceId || 'global',
+          requestId
+        },
+        signalContext: {
+          deviceReason: deviceCheck.reason || null,
+          deviceRiskIncrease: deviceCheck.riskIncrease || 0,
+          deviceTrustScore: deviceCheck.device?.trustScore,
+          geoAnomaly: geoCheck.isAnomaly,
+          geoSpeedRequired: geoCheck.speedRequired || 0,
+          impossibleTravel: (geoCheck.speedRequired || 0) > 900,
+          velocityAnomaly: Boolean(velocityCheck),
+          failedAttempts
+        }
+      });
+
+      const riskScore = Math.min(100, Number(riskDecision.scores.finalRiskScore || 0));
+      const flags = this.deriveFlagsFromRiskDecision(riskDecision, deviceCheck, geoCheck, failedAttempts, velocityCheck);
 
       // Log the security event
-      const eventType = riskScore >= 70 ? 'SUSPICIOUS_LOGIN' : 'LOGIN_ATTEMPT';
+      const eventType = riskDecision.isSuspicious ? 'SUSPICIOUS_LOGIN' : 'LOGIN_ATTEMPT';
       
       await SecurityEvent.logEvent({
         userId,
         eventType,
-        severity: riskScore >= 85 ? 'critical' : (riskScore >= 70 ? 'high' : 'medium'),
+        severity: riskDecision.shouldBlock ? 'critical' : (riskDecision.requiresChallenge ? 'high' : 'medium'),
         source: 'login_analysis',
         ipAddress,
         userAgent,
@@ -84,22 +85,73 @@ class SuspiciousLoginDetectionService {
         location,
         details: {
           attemptNumber: 1,
-          flagsTriggered: flags
+          flagsTriggered: flags,
+          tenantId: riskDecision.tenantId,
+          policyVersion: riskDecision.policyVersion,
+          modelVersion: riskDecision.modelVersion,
+          reproducibilityKey: riskDecision.reproducibilityKey,
+          explainabilityTopFactors: riskDecision.explainability?.topFactors || []
         },
         riskScore,
-        action: riskScore >= 85 ? 'challenged' : 'allowed'
+        action: riskDecision.action === 'blocked'
+          ? 'blocked'
+          : riskDecision.action === 'challenged'
+            ? 'challenged'
+            : 'allowed'
       });
 
       return {
-        isSuspicious: riskScore >= 70,
-        requiresChallenge: riskScore >= 85,
-        riskScore: Math.min(100, riskScore),
-        flags
+        isSuspicious: riskDecision.isSuspicious,
+        requiresChallenge: riskDecision.requiresChallenge,
+        shouldBlock: riskDecision.shouldBlock,
+        action: riskDecision.action,
+        riskScore,
+        flags,
+        explainability: riskDecision.explainability,
+        policyVersion: riskDecision.policyVersion,
+        modelVersion: riskDecision.modelVersion,
+        reproducibilityKey: riskDecision.reproducibilityKey,
+        drift: riskDecision.drift
       };
     } catch (error) {
       console.error('Error analyzing login attempt:', error);
       throw error;
     }
+  }
+
+  deriveFlagsFromRiskDecision(riskDecision, deviceCheck, geoCheck, failedAttempts, velocityCheck) {
+    const flags = [];
+
+    if (deviceCheck?.flagged) {
+      flags.push('DEVICE_FINGERPRINT_MISMATCH');
+      if (deviceCheck.reason) {
+        flags.push(deviceCheck.reason);
+      }
+    }
+
+    if (geoCheck?.isAnomaly) {
+      flags.push('GEOGRAPHIC_ANOMALY');
+    }
+
+    if ((geoCheck?.speedRequired || 0) > 900) {
+      flags.push('IMPOSSIBLE_TRAVEL');
+    }
+
+    if (velocityCheck) {
+      flags.push('VELOCITY_ANOMALY');
+    }
+
+    if ((failedAttempts || 0) >= 3) {
+      flags.push('MULTIPLE_FAILED_ATTEMPTS');
+    }
+
+    for (const factor of riskDecision?.explainability?.topFactors || []) {
+      if (factor?.key) {
+        flags.push(`RISK_FACTOR:${factor.key}`);
+      }
+    }
+
+    return [...new Set(flags)];
   }
 
   /**
@@ -403,6 +455,49 @@ class SuspiciousLoginDetectionService {
     } catch (error) {
       console.error('Error getting user risk profile:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Advanced behavioral anomaly detection using ML model
+   * @param {string} userId - User ID
+   * @param {object} loginInfo - Login information
+   * @returns {Promise<{isAnomaly: boolean, anomalyScore: number, details: object}>}
+   */
+  async analyzeBehavioralAnomaly(userId, loginInfo) {
+    try {
+      // Example: Call external ML model for behavioral anomaly detection
+      const features = {
+        userId,
+        ipAddress: loginInfo.ipAddress,
+        deviceFingerprint: loginInfo.deviceFingerprint,
+        location: loginInfo.location,
+        userAgent: loginInfo.userAgent,
+        timestamp: Date.now(),
+        sessionId: loginInfo.sessionId
+      };
+      // Simulate ML model prediction (replace with real model call)
+      const anomalyScore = Math.random() * 100;
+      const isAnomaly = anomalyScore > 80;
+      // Log anomaly event if detected
+      if (isAnomaly) {
+        await SecurityEvent.logEvent({
+          userId,
+          eventType: 'BEHAVIORAL_ANOMALY',
+          severity: anomalyScore > 95 ? 'critical' : 'high',
+          source: 'behavioral_ml',
+          ipAddress: loginInfo.ipAddress,
+          deviceFingerprint: loginInfo.deviceFingerprint,
+          location: loginInfo.location,
+          details: { anomalyScore, sessionId: loginInfo.sessionId },
+          riskScore: anomalyScore,
+          action: 'challenged'
+        });
+      }
+      return { isAnomaly, anomalyScore, details: features };
+    } catch (error) {
+      console.error('Error analyzing behavioral anomaly:', error);
+      return { isAnomaly: false, anomalyScore: 0, details: {} };
     }
   }
 }

@@ -1,224 +1,258 @@
-        .contact-container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 2rem 1rem;
-        }
+/* =========================
+   CONTACT SECTION LAYOUT
+========================= */
 
-        .contact-grid {
-            display: grid;
-            grid-template-columns: 1fr 2fr;
-            gap: 2rem;
-        }
+.contact-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 4rem 1.5rem;
+}
 
-        @media (max-width: 768px) {
-            .contact-grid {
-                grid-template-columns: 1fr;
-            }
-        }
+.contact-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 3rem;
+    align-items: stretch;
+}
 
-        .contact-info {
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
+@media (max-width: 900px) {
+    .contact-grid {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+    }
+}
 
-        .info-card {
-            background: #1a1a3a;
-            padding: 1.5rem;
-            border-radius: 12px;
-            border: 1px solid #2e2e5e;
-            transition: transform 0.3s ease;
-        }
+/* =========================
+   INFO SECTION
+========================= */
 
-        .info-card:hover {
-            transform: translateY(-5px);
-        }
+.contact-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1.8rem;
+}
 
-        .info-card i {
-            font-size: 1.5rem;
-            color: #64ffda;
-            margin-bottom: 1rem;
-        }
+/* Glass Card Shared Style */
 
-        .info-card h4 {
-            margin-bottom: 0.5rem;
-            color: #fff;
-        }
+.info-card,
+.contact-form-card {
+    background: rgba(26, 26, 58, 0.75);
+    backdrop-filter: blur(18px);
+    padding: 2.2rem;
+    border-radius: 18px;
+    border: 1px solid rgba(100, 255, 218, 0.15);
+    transition: all 0.35s ease;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.35);
+}
 
-        .info-card p {
-            color: #8892b0;
-            font-size: 0.9rem;
-        }
+.info-card:hover,
+.contact-form-card:hover {
+    transform: translateY(-8px);
+    border-color: rgba(100, 255, 218, 0.45);
+    box-shadow: 0 25px 60px rgba(100, 255, 218, 0.18);
+}
 
-        .contact-form-card {
-            background: #1a1a3a;
-            padding: 2rem;
-            border-radius: 12px;
-            border: 1px solid #2e2e5e;
-        }
+/* Info Card Content */
 
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
+.info-card i {
+    font-size: 1.8rem;
+    color: #64ffda;
+    margin-bottom: 1rem;
+}
 
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: #ccd6f6;
-        }
+.info-card h4 {
+    margin-bottom: 0.6rem;
+    color: #ffffff;
+    font-size: 1.1rem;
+}
 
-        .form-group input,
-        .form-group textarea {
-            width: 100%;
-            padding: 0.8rem;
-            background: #0f0f23;
-            border: 1px solid #2e2e5e;
-            border-radius: 8px;
-            color: #fff;
-            font-family: inherit;
-            transition: border-color 0.3s ease;
-        }
+.info-card p {
+    color: #9aa6c4;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
 
-        .form-group input:focus,
-        .form-group textarea:focus {
-            outline: none;
-            border-color: #64ffda;
-        }
+/* =========================
+   CONTACT FORM
+========================= */
 
-        .submit-btn {
-            width: 100%;
-            padding: 1rem;
-            background: linear-gradient(135deg, #64ffda 0%, #4facfe 100%);
-            border: none;
-            border-radius: 8px;
-            color: #0a192f;
-            font-weight: 600;
-            cursor: pointer;
-            transition: opacity 0.3s ease;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 0.5rem;
-        }
+.form-group {
+    margin-bottom: 1.6rem;
+}
 
-        .submit-btn:hover {
-            opacity: 0.9;
-        }
+.form-group label {
+    display: block;
+    margin-bottom: 0.6rem;
+    font-size: 0.9rem;
+    color: #ccd6f6;
+    font-weight: 500;
+}
 
-        .submit-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 0.9rem 1rem;
+    background: #0f0f23;
+    border: 1px solid #2e2e5e;
+    border-radius: 10px;
+    color: #ffffff;
+    font-family: inherit;
+    transition: all 0.3s ease;
+    font-size: 0.95rem;
+}
 
-        .status-msg {
-            margin-top: 1rem;
-            padding: 1rem;
-            border-radius: 8px;
-            display: none;
-        }
+.form-group input:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #64ffda;
+    box-shadow: 0 0 0 3px rgba(100, 255, 218, 0.15);
+}
 
-        .status-msg.success {
-            display: block;
-            background: rgba(100, 255, 218, 0.1);
-            color: #64ffda;
-            border: 1px solid #64ffda;
-        }
+/* =========================
+   SUBMIT BUTTON
+========================= */
 
-        .status-msg.error {
-            display: block;
-            background: rgba(255, 107, 107, 0.1);
-            color: #ff6b6b;
-            border: 1px solid #ff6b6b;
-        }
+.submit-btn {
+    width: 100%;
+    padding: 1rem;
+    background: linear-gradient(135deg, #64ffda 0%, #4facfe 100%);
+    border: none;
+    border-radius: 12px;
+    color: #0a192f;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.6rem;
+}
 
-        /* <!-- Smooth Cursor Trail --> */
+.submit-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 25px rgba(100, 255, 218, 0.35);
+}
 
-        .cursor-trail-container {
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            z-index: 999999;
-        }
+.submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
 
-        .trail-dot {
-            position: absolute;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #64ffda 0%, #00b4d8 100%);
-            box-shadow:
-                0 0 15px rgba(100, 255, 218, 0.8),
-                0 0 30px rgba(100, 255, 218, 0.4);
-            transform: translate(-50%, -50%);
-            will-change: transform, opacity;
-            mix-blend-mode: screen;
-            transition: opacity 0.3s ease, transform 0.3s ease;
-        }
+/* =========================
+   STATUS MESSAGES
+========================= */
 
-        .trail-dot:first-child {
-            width: 12px;
-            height: 12px;
-            background: linear-gradient(135deg, #64ffda 0%, #00b4d8 100%);
-            box-shadow:
-                0 0 20px rgba(100, 255, 218, 0.9),
-                0 0 40px rgba(100, 255, 218, 0.6);
-            z-index: 2;
-        }
+.status-msg {
+    margin-top: 1.2rem;
+    padding: 1rem;
+    border-radius: 10px;
+    display: none;
+    font-size: 0.9rem;
+}
 
-        .cursor-clicking {
-            transform: translate(-50%, -50%) scale(1.5);
-            background: linear-gradient(135deg, #ff6b9d 0%, #ffcc00 100%) !important;
-            box-shadow:
-                0 0 25px rgba(255, 107, 157, 0.9),
-                0 0 50px rgba(255, 107, 157, 0.6) !important;
-        }
+.status-msg.success {
+    display: block;
+    background: rgba(100, 255, 218, 0.1);
+    color: #64ffda;
+    border: 1px solid #64ffda;
+}
 
-        .cursor-hovering {
-            transform: translate(-50%, -50%) scale(1.3);
-            background: linear-gradient(135deg, #00b4d8 0%, #64ffda 100%) !important;
-        }
-        /* =========================
-   DARK LIGHT MODE TOGGLE
+.status-msg.error {
+    display: block;
+    background: rgba(255, 107, 107, 0.1);
+    color: #ff6b6b;
+    border: 1px solid #ff6b6b;
+}
+
+/* =========================
+   SMOOTH CURSOR TRAIL
+========================= */
+
+.cursor-trail-container {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 999999;
+}
+
+.trail-dot {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #64ffda 0%, #00b4d8 100%);
+    box-shadow:
+        0 0 15px rgba(100, 255, 218, 0.8),
+        0 0 30px rgba(100, 255, 218, 0.4);
+    transform: translate(-50%, -50%);
+    will-change: transform, opacity;
+    mix-blend-mode: screen;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.trail-dot:first-child {
+    width: 14px;
+    height: 14px;
+    box-shadow:
+        0 0 25px rgba(100, 255, 218, 0.9),
+        0 0 50px rgba(100, 255, 218, 0.6);
+}
+
+.cursor-clicking {
+    transform: translate(-50%, -50%) scale(1.5);
+    background: linear-gradient(135deg, #ff6b9d 0%, #ffcc00 100%) !important;
+}
+
+.cursor-hovering {
+    transform: translate(-50%, -50%) scale(1.3);
+    background: linear-gradient(135deg, #00b4d8 0%, #64ffda 100%) !important;
+}
+
+/* =========================
+   THEME TOGGLE
 ========================= */
 
 .theme-toggle {
     margin-left: 20px;
-    font-size: 18px;
-    cursor: pointer;
-    background: linear-gradient(135deg, #6366f1, #64ffda);
-    width: 42px;
-    height: 42px;
+    width: 45px;
+    height: 45px;
     border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #64ffda);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: #ffffff;
+    cursor: pointer;
     transition: all 0.3s ease;
 }
 
 .theme-toggle:hover {
-    transform: rotate(15deg) scale(1.1);
+    transform: rotate(20deg) scale(1.1);
+    box-shadow: 0 10px 20px rgba(100, 255, 218, 0.4);
 }
 
 /* =========================
-   LIGHT MODE STYLES
+   LIGHT MODE
 ========================= */
 
 body.light-mode {
-    background: #f8fafc;
+    background: #f4f7fb;
     color: #111827;
 }
 
-body.light-mode .header,
-body.light-mode .footer {
-    background: #ffffff;
-}
-
-body.light-mode .contact-form-card,
-body.light-mode .info-card {
+body.light-mode .info-card,
+body.light-mode .contact-form-card {
     background: #ffffff;
     color: #111827;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+}
+
+body.light-mode .info-card p {
+    color: #4b5563;
 }
 
 body.light-mode input,
@@ -228,7 +262,76 @@ body.light-mode textarea {
     border: 1px solid #d1d5db;
 }
 
+body.light-mode input:focus,
+body.light-mode textarea:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
 body.light-mode .submit-btn {
     background: linear-gradient(135deg, #6366f1, #64ffda);
-    color: #fff;
+    color: #ffffff;
+}/* =========================
+   HERO SECTION FIX
+========================= */
+
+.hero-section {
+    padding: 6rem 1.5rem 4rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at top, rgba(100,255,218,0.08), transparent 70%);
+}
+
+.hero-title {
+    font-size: 3rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, #64ffda, #4facfe);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.hero-subtitle {
+    max-width: 600px;
+    font-size: 1.1rem;
+    color: #8892b0;
+    line-height: 1.6;
+}
+
+/* Fix spacing between hero and contact section */
+
+.contact-container {
+    margin-top: 2rem;
+}
+
+/* Responsive Fix */
+
+@media (max-width: 768px) {
+    .hero-section {
+        padding: 5rem 1rem 3rem;
+    }
+
+    .hero-title {
+        font-size: 2.2rem;
+    }
+
+    .hero-subtitle {
+        font-size: 1rem;
+    }
+}
+
+/* Light Mode Fix */
+
+body.light-mode .hero-title {
+    background: linear-gradient(135deg, #6366f1, #64ffda);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+body.light-mode .hero-subtitle {
+    color: #4b5563;
 }

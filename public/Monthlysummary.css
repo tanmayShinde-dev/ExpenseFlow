@@ -134,3 +134,26 @@
           #64ffda 100%
         ) !important;
       }
+/* Theme Toggle Button */
+.theme-toggle {
+  background: linear-gradient(135deg, #64ffda, #667eea);
+  border: none;
+  color: #0f0f23;
+  padding: 0.6rem 0.8rem;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  margin-right: 0.8rem;
+  transition: all 0.3s ease;
+}
+
+.theme-toggle:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 15px rgba(100, 255, 218, 0.4);
+}body {
+  background: var(--bg-color);
+  color: var(--text-color);
+}.balance-card,
+.stat-card {
+  background: var(--card-bg);
+}

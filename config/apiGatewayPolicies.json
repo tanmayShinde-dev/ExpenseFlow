@@ -1,0 +1,109 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-03-01T00:00:00.000Z",
+  "defaultPolicy": {
+    "policyId": "default",
+    "authRequired": true,
+    "allowedAuth": ["jwt", "oauth2"],
+    "requiredScopes": [],
+    "rateLimit": {
+      "windowMs": 60000,
+      "max": 120
+    },
+    "requestValidation": {
+      "allowedContentTypes": ["application/json", "application/x-www-form-urlencoded", "multipart/form-data"],
+      "requiredBodyFields": []
+    },
+    "threatDetection": {
+      "enabled": true,
+      "blockOnDetection": true,
+      "sensitivity": "medium"
+    }
+  },
+  "routePolicies": [
+    {
+      "policyId": "auth-login",
+      "pattern": "/api/auth/login",
+      "methods": ["POST"],
+      "authRequired": false,
+      "rateLimit": {
+        "windowMs": 900000,
+        "max": 8
+      },
+      "requestValidation": {
+        "requiredBodyFields": ["email", "password"]
+      }
+    },
+    {
+      "policyId": "auth-register",
+      "pattern": "/api/auth/register",
+      "methods": ["POST"],
+      "authRequired": false,
+      "rateLimit": {
+        "windowMs": 3600000,
+        "max": 5
+      },
+      "requestValidation": {
+        "requiredBodyFields": ["name", "email", "password"]
+      }
+    },
+    {
+      "policyId": "verify-2fa",
+      "pattern": "/api/auth/verify-2fa",
+      "methods": ["POST"],
+      "authRequired": false,
+      "rateLimit": {
+        "windowMs": 600000,
+        "max": 10
+      }
+    },
+    {
+      "policyId": "webhooks",
+      "pattern": "/api/*/webhook*",
+      "methods": ["POST"],
+      "authRequired": false,
+      "allowedAuth": [],
+      "rateLimit": {
+        "windowMs": 60000,
+        "max": 240
+      },
+      "threatDetection": {
+        "enabled": true,
+        "blockOnDetection": false,
+        "sensitivity": "high"
+      }
+    },
+    {
+      "policyId": "payments-sensitive",
+      "pattern": "/api/payments/*",
+      "methods": ["POST", "PUT", "PATCH", "DELETE"],
+      "authRequired": true,
+      "requiredScopes": [],
+      "rateLimit": {
+        "windowMs": 60000,
+        "max": 40
+      },
+      "threatDetection": {
+        "enabled": true,
+        "blockOnDetection": true,
+        "sensitivity": "high"
+      }
+    },
+    {
+      "policyId": "gateway-admin",
+      "pattern": "/api/gateway/policies*",
+      "methods": ["GET", "PUT"],
+      "authRequired": true,
+      "requiredScopes": [],
+      "rateLimit": {
+        "windowMs": 60000,
+        "max": 30
+      },
+      "threatDetection": {
+        "enabled": true,
+        "blockOnDetection": true,
+        "sensitivity": "high"
+      }
+    }
+  ]
+}

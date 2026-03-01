@@ -2,55 +2,57 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const forensicReplayEngine = require('../services/forensicReplayEngine');
-const eventProcessor = require('../services/eventProcessor');
+const ledgerService = require('../services/ledgerService');
+const ResponseFactory = require('../utils/responseFactory');
+
+/**
+ * Forensic & Integrity Routes
+ * Issue #782: API for viewing chronological state diffs and replaying history.
+ */
 
 /**
  * @route   GET /api/forensics/replay/:entityId
- * @desc    Replay state to a specific time or version
+ * @desc    Get the state of an entity at a specific point in time
  */
 router.get('/replay/:entityId', auth, async (req, res) => {
     try {
-        const { entityId } = req.params;
-        const { time, v } = req.query;
+        const { timestamp } = req.query;
+        const state = await forensicReplayEngine.getPointInTimeState(
+            req.params.entityId,
+            timestamp || new Date()
+        );
 
-        let state;
-        if (time) {
-            state = await forensicReplayEngine.replayToTime(entityId, time);
-        } else if (v) {
-            state = await forensicReplayEngine.replayToVersion(entityId, parseInt(v));
-        } else {
-            return res.status(400).json({ success: false, error: 'Provide time or version (v)' });
-        }
+        if (!state) return ResponseFactory.error(res, 404, 'No forensic data found for this entity');
 
-        res.json({ success: true, data: state });
+        return ResponseFactory.success(res, state);
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        return ResponseFactory.error(res, 500, error.message);
     }
 });
 
 /**
- * @route   GET /api/forensics/audit/:entityId
- * @desc    Get complete audit trail (event log) for an entity
+ * @route   GET /api/forensics/history/:entityId
+ * @desc    Get full audit trail with semantic diffs
  */
-router.get('/audit/:entityId', auth, async (req, res) => {
+router.get('/history/:entityId', auth, async (req, res) => {
     try {
-        const trail = await forensicReplayEngine.generateAuditTrail(req.params.entityId);
-        res.json({ success: true, data: trail });
+        const history = await forensicReplayEngine.getAuditHistory(req.params.entityId);
+        return ResponseFactory.success(res, history);
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        return ResponseFactory.error(res, 500, error.message);
     }
 });
 
 /**
- * @route   POST /api/forensics/verify/:entityId
- * @desc    Verify the integrity of an entity's event chain
+ * @route   GET /api/forensics/verify/:entityId
+ * @desc    Verify the integrity of an entire event chain
  */
-router.post('/verify/:entityId', auth, async (req, res) => {
+router.get('/verify/:entityId', auth, async (req, res) => {
     try {
-        const result = await eventProcessor.verifyIntegrity(req.params.entityId);
-        res.json({ success: true, ...result });
+        const result = await ledgerService.auditChain(req.params.entityId);
+        return ResponseFactory.success(res, result);
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        return ResponseFactory.error(res, 500, error.message);
     }
 });
 

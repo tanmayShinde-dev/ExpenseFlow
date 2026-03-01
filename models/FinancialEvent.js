@@ -13,7 +13,7 @@ const financialEventSchema = new mongoose.Schema({
     },
     entityType: {
         type: String,
-        enum: ['TRANSACTION', 'BUDGET', 'WORKSPACE'],
+        enum: ['TRANSACTION', 'BUDGET', 'WORKSPACE', 'TREASURY_NODE'],
         default: 'TRANSACTION'
     },
     eventType: {
@@ -25,7 +25,10 @@ const financialEventSchema = new mongoose.Schema({
             'DELETED',
             'RECONCILED',
             'VOIDED',
-            'FROZEN'
+            'FROZEN',
+            'VIRTUAL_TRANSFER',
+            'FUNDS_RESERVED',
+            'FUNDS_RELEASED'
         ]
     },
     payload: {
@@ -56,6 +59,25 @@ const financialEventSchema = new mongoose.Schema({
     timestamp: {
         type: Date,
         default: Date.now,
+        index: true
+    },
+    parentEventId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'FinancialEvent',
+        default: null
+    },
+    workspaceId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Workspace',
+        index: true
+    },
+    forensicTraceId: {
+        type: String,
+        index: true // Links event to original HTTP request
+    },
+    chainId: {
+        type: String,
+        default: 'v1',
         index: true
     }
 }, {

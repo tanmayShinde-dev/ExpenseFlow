@@ -27,24 +27,15 @@ const immutableAuditLogSchema = new mongoose.Schema({
   },
   action: {
     type: String,
-    required: true,
-    enum: [
-      'expense_created', 'expense_updated', 'expense_deleted', 'expense_approved', 'expense_rejected',
-      'budget_created', 'budget_updated', 'budget_deleted', 'budget_exceeded',
-      'user_login', 'user_logout', 'user_created', 'user_updated', 'user_deleted',
-      'workspace_created', 'workspace_updated', 'workspace_deleted',
-      'compliance_violation', 'data_export', 'data_import', 'system_config_changed',
-      'payment_processed', 'refund_issued', 'tax_calculated', 'report_generated'
-    ]
+    required: true
   },
   entityType: {
     type: String,
-    required: true,
-    enum: ['expense', 'budget', 'user', 'workspace', 'payment', 'report', 'system']
+    required: true
   },
   entityId: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true
+    type: mongoose.Schema.Types.Mixed,
+    required: false
   },
   changes: {
     before: mongoose.Schema.Types.Mixed,
@@ -129,11 +120,15 @@ immutableAuditLogSchema.pre('save', async function(next) {
       sequenceNumber: this.sequenceNumber,
       previousHash: this.previousHash,
       userId: this.userId,
+      workspaceId: this.workspaceId,
       action: this.action,
       entityType: this.entityType,
       entityId: this.entityId,
       changes: this.changes,
-      timestamp: new Date()
+      metadata: this.metadata,
+      riskLevel: this.riskLevel,
+      complianceFlags: this.complianceFlags,
+      timestamp: this.createdAt || new Date()
     });
     
     this.currentHash = crypto.createHash('sha256').update(dataToHash).digest('hex');

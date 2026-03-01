@@ -62,13 +62,18 @@ class BaseRepository {
     }
 
     /**
-     * Create a new document (with vault encryption interception)
+     * Create a new document (with vault encryption and journaling support)
      */
-    async create(data) {
+    async create(data, options = {}) {
+        if (options.deferred) {
+            return await this._journalMutation('CREATE', data, options);
+        }
         let processedData = await this._encryptSensitiveFields(data);
         const document = new this.model(processedData);
         let saved = await document.save();
+        await this._invalidateCache(saved);
         return await this._decryptSensitiveFields(saved);
+
     }
 
     /**
@@ -128,17 +133,29 @@ class BaseRepository {
     }
 
     /**
-     * Update a document by ID
+     * Update a document by ID (with journaling support)
      */
     async updateById(id, data, options = { new: true, runValidators: true }) {
-        return await this.model.findByIdAndUpdate(id, data, options);
+        if (options.deferred) {
+            return await this._journalMutation('UPDATE', { ...data, _id: id }, options);
+        }
+        const result = await this.model.findByIdAndUpdate(id, data, options);
+        await this._invalidateCache(result);
+        return result;
     }
 
     /**
-     * Update one document by filters
+     * Update one document by filters (with journaling support)
      */
     async updateOne(filters, data, options = { new: true, runValidators: true }) {
-        return await this.model.findOneAndUpdate(filters, data, options);
+        if (options.deferred) {
+            const doc = await this.model.findOne(filters);
+            if (!doc) throw new Error('Document not found for deferred update');
+            return await this._journalMutation('UPDATE', { ...data, _id: doc._id }, options);
+        }
+        const result = await this.model.findOneAndUpdate(filters, data, options);
+        await this._invalidateCache(result);
+        return result;
     }
 
     /**
@@ -149,17 +166,29 @@ class BaseRepository {
     }
 
     /**
-     * Delete a document by ID
+     * Delete a document by ID (with journaling support)
      */
-    async deleteById(id) {
-        return await this.model.findByIdAndDelete(id);
+    async deleteById(id, options = {}) {
+        if (options.deferred) {
+            return await this._journalMutation('DELETE', { _id: id }, options);
+        }
+        const result = await this.model.findByIdAndDelete(id);
+        await this._invalidateCache(result);
+        return result;
     }
 
     /**
-     * Delete one document by filters
+     * Delete one document by filters (with journaling support)
      */
-    async deleteOne(filters) {
-        return await this.model.findOneAndDelete(filters);
+    async deleteOne(filters, options = {}) {
+        if (options.deferred) {
+            const doc = await this.model.findOne(filters);
+            if (!doc) throw new Error('Document not found for deferred delete');
+            return await this._journalMutation('DELETE', { _id: doc._id }, options);
+        }
+        const result = await this.model.findOneAndDelete(filters);
+        await this._invalidateCache(result);
+        return result;
     }
 
     /**
@@ -242,6 +271,42 @@ class BaseRepository {
      */
     async executeQuery(queryFn) {
         return await queryFn(this.model);
+    }
+
+    /**
+     * Helper: Record mutation in journal instead of direct DB write
+     */
+    async _journalMutation(operation, data, options = {}) {
+        const WriteJournal = require('../models/WriteJournal');
+        const mongoose = require('mongoose');
+
+        const journal = await WriteJournal.create({
+            entityId: data._id || options.entityId || new mongoose.Types.ObjectId(),
+            entityType: this.model.modelName.toUpperCase(),
+            operation,
+            payload: data,
+            vectorClock: options.vectorClock || {},
+            workspaceId: options.workspaceId || data.workspace,
+            userId: options.userId,
+            status: 'PENDING'
+        });
+        return { journalId: journal._id, status: 'JOURNALED', deferred: true };
+    }
+
+    /**
+     * Helper: Clear Fiscal Graph Cache Post-Save
+     */
+    async _invalidateCache(doc) {
+        if (!doc) return;
+        const workspaceId = doc.workspace || doc.workspaceId || doc.tenantId;
+        if (workspaceId) {
+            try {
+                const invalidationEngine = require('../services/invalidationEngine');
+                await invalidationEngine.invalidateGraph(workspaceId);
+            } catch (err) {
+                console.error('[BaseRepository] Fast-fail on Cache Invalidation:', err.message);
+            }
+        }
     }
 }
 

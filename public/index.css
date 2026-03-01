@@ -392,3 +392,15 @@
   border: 1px dashed rgba(255,255,255,0.15);
   border-radius: 12px;
 }
+:root {
+  --bg-color: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+  --text-color: #ffffff;
+  --card-bg: rgba(255, 255, 255, 0.05);
+}
+
+/* Light Theme */
+[data-theme="light"] {
+  --bg-color: linear-gradient(135deg, #f8f9fa, #e9ecef);
+  --text-color: #111827;
+  --card-bg: #ffffff;
+}

@@ -97,16 +97,59 @@ class ExpenseService {
             }
         }
 
-        // 5. Save Expense
-        const expense = await expenseRepository.create(finalData);
+        // 5. Save Expense (with Journaling support for collaborative workspaces)
+        const isDeferred = !!finalData.workspace;
+        const expense = await expenseRepository.create(finalData, {
+            deferred: isDeferred,
+            workspaceId: finalData.workspace,
+            userId
+        });
+
+        // 6. Handle deferred result
+        if (expense.deferred) {
+            // Optimistic response for collaborative environments
+            if (io) {
+                io.to(`user_${userId}`).emit('expense_journaled', {
+                    entityId: expense.journalId,
+                    status: 'optimistic_pending'
+                });
+            }
+            return {
+                ...finalData,
+                _id: expense.journalId,
+                status: 'journaled',
+                optimistic: true
+            };
+        }
 
         // Issue #738: Immutable Ledger Event
         const event = await ledgerService.recordEvent(
             expense._id,
             'CREATED',
             finalData,
-            userId
+            userId,
+            finalData.workspace
         );
+
+        // Issue #768: Treasury Liquidity Settlement
+        if (finalData.workspace) {
+            const treasuryRepository = require('../repositories/treasuryRepository');
+            const operatingNode = await treasuryRepository.findNode(finalData.workspace, 'OPERATING');
+            if (operatingNode) {
+                // Link expense to the fund node
+                finalData.treasuryNodeId = operatingNode._id;
+                // Record fund reservation in ledger
+                await ledgerService.recordEvent(
+                    operatingNode._id,
+                    'FUNDS_RESERVED',
+                    { amount: finalData.amount, expenseId: expense._id },
+                    userId,
+                    finalData.workspace,
+                    event._id,
+                    'TREASURY_NODE'
+                );
+            }
+        }
 
         // Update sequence in main document
         await expenseRepository.updateById(expense._id, {

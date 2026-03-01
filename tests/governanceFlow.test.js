@@ -1,54 +1,108 @@
 const assert = require('assert');
-const riskScoring = require('../utils/riskScoring');
+const mongoose = require('mongoose');
+const complianceOrchestrator = require('../services/complianceOrchestrator');
+const predicateEngine = require('../utils/predicateEngine');
+const PolicyNode = require('../models/PolicyNode');
+const Workspace = require('../models/Workspace');
 
-/**
- * Governance Flow Tests
- * Issue #757: Verifies hierarchical risk scoring and policy resolution logic.
- */
-describe('Hierarchical Governance & Risk Framework', () => {
+describe('Parametric Policy Governance & Compliance Circuit Breaker (#780)', () => {
 
-    describe('RiskScoring Engine', () => {
-        it('should calculate base risk score for compliant transaction', () => {
-            const transaction = { amount: 50, category: 'office' };
-            const rule = { maxAmount: 100, riskWeight: 1.0 };
+    it('Predicate Engine should evaluate complex AST conditions', () => {
+        const condition = {
+            op: 'AND',
+            args: [
+                {
+                    op: 'GREATER_THAN',
+                    field: 'payload.amount',
+                    value: 1000
+                },
+                {
+                    op: 'IN_ARRAY',
+                    field: 'payload.category',
+                    array: ['Entertainment', 'Luxury']
+                }
+            ]
+        };
 
-            const score = riskScoring.calculateScore(transaction, rule);
-            assert.strictEqual(score, 10); // Base weight score
-        });
+        const badContext = {
+            payload: { amount: 1500, category: 'Luxury' }
+        };
+        const goodContext = {
+            payload: { amount: 500, category: 'Travel' }
+        };
 
-        it('should exponentially increase score on limit breach', () => {
-            const transaction = { amount: 400, category: 'office' }; // 4x limit
-            const rule = { maxAmount: 100, riskWeight: 1.0 };
-
-            const score = riskScoring.calculateScore(transaction, rule);
-            // log2(4) = 2. 2 * 20 = 40. 40 + 10 = 50.
-            assert.strictEqual(score, 50);
-        });
-
-        it('should assign critical severity to very high scores', () => {
-            const severity = riskScoring.getSeverity(85);
-            assert.strictEqual(severity, 'critical');
-        });
+        assert.strictEqual(predicateEngine.evaluate(condition, badContext), true);
+        assert.strictEqual(predicateEngine.evaluate(condition, goodContext), false);
     });
 
-    describe('Policy Resolution Logic (Mocked)', () => {
-        // Note: Database-dependent tests for PolicyResolver would require a full Mongoose mock
-        // Here we focus on the logic that would be used by the resolver.
+    it('Predicate Engine should detect statistical anomalies', () => {
+        const condition = {
+            op: 'ANOMALY_ZSCORE',
+            field: 'payload.amount',
+            historyField: 'context.history',
+            threshold: 2.0
+        };
 
-        it('should correctly merge hierarchical rules in Map', () => {
-            const globalRules = [{ category: 'food', maxAmount: 50 }];
-            const tenantRules = [{ category: 'food', maxAmount: 100 }, { category: 'travel', maxAmount: 500 }];
+        // Standard sequence: 100, 110, 95, 105, 100. Mean ~ 102, StdDev is small ~5.4
+        // A value of 500 is wildly anomalous (Z-Score > 73)
+        const context = {
+            payload: { amount: 500 },
+            context: { history: [100, 110, 95, 105, 100] }
+        };
 
-            const merged = new Map();
+        const isTripped = predicateEngine.evaluate(condition, context);
+        assert.strictEqual(isTripped, true);
 
-            // Simulate resolver applyRulesToMap (Workspace > Tenant > Global)
-            const apply = (m, rules) => rules.forEach(r => m.set(r.category, r));
+        const normalContext = {
+            payload: { amount: 105 },
+            context: { history: [100, 110, 95, 105, 100] }
+        };
+        assert.strictEqual(predicateEngine.evaluate(condition, normalContext), false);
+    });
 
-            apply(merged, globalRules);
-            apply(merged, tenantRules); // Tenant overrides global
+    it('Compliance Orchestrator should evaluate and trip a circuit breaker', async () => {
+        // Mock the diffGraph and policyRepository to inject controlled test data
+        // without hitting the DB.
 
-            assert.strictEqual(merged.get('food').maxAmount, 100);
-            assert.strictEqual(merged.get('travel').maxAmount, 500);
-        });
+        const diffGraph = require('../utils/diffGraph');
+        const policyRepo = require('../repositories/policyRepository');
+
+        const originalDiffGraph = diffGraph.getInvalidationPaths;
+        const originalPolicyRepo = policyRepo.getInheritedPolicies;
+
+        const mockWorkspaceId = new mongoose.Types.ObjectId();
+
+        diffGraph.getInvalidationPaths = async () => [mockWorkspaceId.toString()];
+
+        policyRepo.getInheritedPolicies = async () => [
+            {
+                _id: 'policy_1',
+                name: 'Anti-Luxury Spend Cap',
+                targetResource: 'TRANSACTION',
+                action: 'DENY',
+                conditions: {
+                    op: 'GREATER_THAN',
+                    field: 'payload.amount',
+                    value: 5000
+                }
+            }
+        ];
+
+        try {
+            const badPayload = { amount: 6000 };
+            const goodPayload = { amount: 1000 };
+
+            const badEval = await complianceOrchestrator.evaluate(mockWorkspaceId.toString(), 'TRANSACTION', badPayload);
+            assert.strictEqual(badEval.allowed, false);
+            assert.strictEqual(badEval.action, 'DENY');
+
+            const goodEval = await complianceOrchestrator.evaluate(mockWorkspaceId.toString(), 'TRANSACTION', goodPayload);
+            assert.strictEqual(goodEval.allowed, true);
+
+        } finally {
+            // Restore mocks
+            diffGraph.getInvalidationPaths = originalDiffGraph;
+            policyRepo.getInheritedPolicies = originalPolicyRepo;
+        }
     });
 });

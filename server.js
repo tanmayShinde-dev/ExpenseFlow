@@ -1,9 +1,44 @@
 const express = require('express');
 const http = require('http');
+const crypto = require('crypto');
+const socketIo = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const helmet = require('helmet');
+const socketAuth = require('./middleware/socketAuth');
+const CronJobs = require('./services/cronJobs');
+const { generalLimiter } = require('./middleware/rateLimiter');
+const { sanitizeInput, sanitizationMiddleware, validateDataTypes } = require('./middleware/sanitizer');
+const securityMonitor = require('./services/securityMonitor');
+const apiGateway = require('./middleware/apiGateway');
 require('dotenv').config();
+
+const authRoutes = require('./routes/auth');
+const expenseRoutes = require('./routes/expenses');
+const syncRoutes = require('./routes/sync');
+const splitsRoutes = require('./routes/splits');
+const groupsRoutes = require('./routes/groups');
+const backupRoutes = require('./routes/backups');
+const backupService = require('./services/backupService');
+const twoFactorAuthRoutes = require('./routes/twoFactorAuth');
+const encryptionRoutes = require('./routes/encryption');
+const automatedForecastingRoutes = require('./routes/automatedForecasting');
+const auditComplianceRoutes = require('./routes/auditCompliance');
+const apiGatewayRoutes = require('./routes/apiGateway');
+const realtimeCollaborationRoutes = require('./routes/realtimeCollaboration');
+const adaptiveRiskEngineRoutes = require('./routes/adaptiveRiskEngine');
+const realtimeCollaborationService = require('./services/realtimeCollaborationService');
+const { transportSecuritySuite } = require('./middleware/transportSecurity');
+const cron = require('node-cron');
+
+// Distributed real-time sync dependencies
+const Redis = require('ioredis');
+const redisPub = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+const redisSub = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
+// Redis pub/sub channel for distributed sync
+const SYNC_CHANNEL = 'expenseflow:sync';
+const COLLAB_CHANNEL = 'expenseflow:collab';
+const SERVER_INSTANCE_ID = process.env.SERVER_INSTANCE_ID || crypto.randomUUID();
 
 const app = express();
 const server = http.createServer(app);
@@ -16,6 +51,17 @@ require('./listeners/AuditListeners').init();
 /* ================================
    SECURITY
 ================================ */
+
+// Security middleware
+// Transport Security (HTTPS, HSTS, Security Headers)
+// Issue #827: End-to-End Encryption for Sensitive Data
+app.use(transportSecuritySuite({
+  enforceHTTPS: process.env.NODE_ENV === 'production',
+  enforceHSTS: process.env.NODE_ENV === 'production',
+  securityHeaders: true,
+  enforceTLS: process.env.NODE_ENV === 'production',
+  validateCipher: process.env.NODE_ENV === 'production'
+}));
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -52,10 +98,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use(require('./middleware/encryptionInterceptor'));
 app.use(require('./middleware/validationInterceptor'));
 app.use(require('./middleware/auditInterceptor'));
+app.use(require('./middleware/auditTraceability'));
 app.use(require('./middleware/tenantResolver'));
+// Inject Circuit Breaker protection early in the pipeline
+// We pass 'TRANSACTION' as a default, though specific routers might override it
+app.use(require('./middleware/complianceGuard')('TRANSACTION'));
 app.use(require('./middleware/leakageGuard'));
 app.use(require('./middleware/liquidityGuard'));
+app.use(require('./middleware/balanceGuard'));
 app.use(require('./middleware/governanceGuard'));
+app.use(require('./middleware/journalInterceptor'));
 app.use(require('./middleware/fieldMasker'));
 app.use(require('./middleware/performanceInterceptor'));
 app.use(require('./middleware/leakageMonitor'));
@@ -91,9 +143,15 @@ async function connectDatabase() {
         require('./jobs/searchPruner').start();
         require('./jobs/conflictPruner').start();
         require('./jobs/liquidityAnalyzer').start();
+        require('./jobs/liquidityRebalancer').start();
         require('./jobs/policyAuditor').start();
+        require('./jobs/journalApplier').start();
         require('./jobs/metricFlusher').start();
+        require('./jobs/integrityAuditor').start();
+        require('./jobs/cachePruner').start();
+        require('./jobs/velocityCalculator').start();
         require('./jobs/keyRotator').start();
+        require('./jobs/neuralReindexer').start(); // Issue #796: Semantic search re-indexer
 
 
 
@@ -113,47 +171,189 @@ async function connectDatabase() {
   }
 }
 
-connectDatabase();
+  // Listen for client expense changes and broadcast to Redis
+  socket.on('expense_created', (expense) => {
+    io.emit('expense_created', expense);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_created', expense }));
+  });
 
-/* ================================
-   ROUTES
-================================ */
+  socket.on('expense_updated', (expense) => {
+    io.emit('expense_updated', expense);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_updated', expense }));
+  });
 
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/users', require('./routes/users'));
-app.use('/api/expenses', require('./routes/expenses'));
-app.use('/api/workspaces', require('./routes/workspaces'));
+  socket.on('expense_deleted', (data) => {
+    io.emit('expense_deleted', data);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_deleted', data }));
+  });
+
+  socket.on('collab:join', async (payload = {}) => {
+    try {
+      const { documentId } = payload;
+      if (!documentId) {
+        socket.emit('collab:error', { error: 'documentId is required' });
+        return;
+      }
+
+      const snapshot = await realtimeCollaborationService.getDocument(documentId, socket.userId);
+      socket.join(`collab_doc_${documentId}`);
+      socket.emit('collab:snapshot', {
+        documentId,
+        snapshot
+      });
+
+      await realtimeCollaborationService.markPresence(documentId, socket.userId, true);
+
+      io.to(`collab_doc_${documentId}`).emit('collab:presence', {
+        documentId,
+        userId: socket.userId,
+        status: 'online',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      socket.emit('collab:error', { error: error.message });
+    }
+  });
+
+  socket.on('collab:operations', async (payload = {}) => {
+    try {
+      const { documentId, operations = [], deviceId } = payload;
+      if (!documentId) {
+        socket.emit('collab:error', { error: 'documentId is required' });
+        return;
+      }
+
+      const result = await realtimeCollaborationService.applyOperations(
+        documentId,
+        socket.userId,
+        deviceId,
+        Array.isArray(operations) ? operations : []
+      );
+
+      socket.emit('collab:ack', {
+        documentId,
+        version: result.version,
+        appliedResults: result.appliedResults
+      });
+
+      const eventPayload = {
+        serverInstanceId: SERVER_INSTANCE_ID,
+        sourceSocketId: socket.id,
+        sourceUserId: socket.userId,
+        documentId,
+        version: result.version,
+        operations: result.serverOperations,
+        text: result.text,
+        registers: result.registers,
+        cells: result.cells,
+        timestamp: new Date().toISOString()
+      };
+
+      socket.to(`collab_doc_${documentId}`).emit('collab:operations', eventPayload);
+      redisPub.publish(COLLAB_CHANNEL, JSON.stringify(eventPayload));
+    } catch (error) {
+      socket.emit('collab:error', { error: error.message });
+    }
+  });
+
+  socket.on('collab:leave', async (payload = {}) => {
+    try {
+      const { documentId } = payload;
+      if (!documentId) {
+        return;
+      }
+
+      socket.leave(`collab_doc_${documentId}`);
+      await realtimeCollaborationService.markPresence(documentId, socket.userId, false);
+      io.to(`collab_doc_${documentId}`).emit('collab:presence', {
+        documentId,
+        userId: socket.userId,
+        status: 'offline',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      socket.emit('collab:error', { error: error.message });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`User ${socket.user.name} disconnected`);
+  });
+});
+
+// Listen for Redis sync events and broadcast to local clients
+redisSub.subscribe(SYNC_CHANNEL, (err) => {
+  if (err) console.error('Redis subscribe error:', err);
+});
+
+redisSub.subscribe(COLLAB_CHANNEL, (err) => {
+  if (err) console.error('Redis collab subscribe error:', err);
+});
+
+redisSub.on('message', (channel, message) => {
+  try {
+    const payload = JSON.parse(message);
+
+    if (channel === COLLAB_CHANNEL) {
+      if (payload.serverInstanceId === SERVER_INSTANCE_ID) {
+        return;
+      }
+      if (payload.documentId) {
+        io.to(`collab_doc_${payload.documentId}`).emit('collab:operations', payload);
+      }
+      return;
+    }
+
+    if (channel !== SYNC_CHANNEL) {
+      return;
+    }
+
+    if (payload.type === 'expense_created') {
+      io.emit('expense_created', payload.expense);
+    } else if (payload.type === 'expense_updated') {
+      io.emit('expense_updated', payload.expense);
+    } else if (payload.type === 'expense_deleted') {
+      io.emit('expense_deleted', payload.data);
+    }
+  } catch (e) {
+    console.error('Redis sync event error:', e);
+  }
+});
+
+// Routes
+app.use('/api', apiGateway.middleware());
+app.use('/api/auth', require('./middleware/rateLimiter').authLimiter, authRoutes);
+app.use('/api/expenses', require('./middleware/rateLimiter').expenseLimiter, expenseRoutes);
+app.use('/api/sync', syncRoutes);
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/receipts', require('./middleware/rateLimiter').uploadLimiter, require('./routes/receipts'));
+app.use('/api/budgets', require('./routes/budgets'));
+app.use('/api/goals', require('./routes/goals'));
 app.use('/api/analytics', require('./routes/analytics'));
-app.use('/api/export', require('./routes/export'));
-app.use('/api/forecasting', require('./routes/forecasting'));
-app.use('/api/governance', require('./routes/governance'));
-app.use('/api/taxonomy', require('./routes/taxonomy'));
-app.use('/api/sync', require('./routes/sync'));
-app.use('/api/admin', require('./routes/admin'));
-app.use('/api/ledger', require('./routes/ledger'));
-app.use('/api/search', require('./routes/search'));
+app.use('/api/currency', require('./routes/currency'));
+app.use('/api/groups', require('./routes/groups'));
+app.use('/api/splits', require('./routes/splits'));
+app.use('/api/workspaces', require('./routes/workspaces'));
+app.use('/api/tax', require('./routes/tax'));
+app.use('/api/backups', backupRoutes); // Issue #462: Backup Management API
+app.use('/api/accounts', require('./routes/accounts'));
+app.use('/api/2fa', require('./middleware/auth'), twoFactorAuthRoutes); // Issue #503: 2FA Management
+app.use('/api/encryption', encryptionRoutes); // Issue #827: End-to-End Encryption
+app.use('/api/forecasting-ai', automatedForecastingRoutes); // Issue #828: Automated Financial Forecasting & AI Insights
+app.use('/api/audit-compliance', auditComplianceRoutes); // Issue #829: Audit Trail & Forensic Investigation Platform
+app.use('/api/gateway', apiGatewayRoutes);
+app.use('/api/realtime-collab', realtimeCollaborationRoutes);
+app.use('/api/risk-engine', adaptiveRiskEngineRoutes);
 
-app.use('/api/telemetry', require('./routes/telemetry'));
-app.use('/api/vault', require('./routes/vault'));
-app.use('/api/jobs', require('./routes/jobs'));
-
-
-
-
-
-
-/* ================================
-   STATIC FILES (ONLY DEV)
-================================ */
-
-if (process.env.NODE_ENV !== 'production') {
-  const path = require('path');
-  app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-}
-
-/* ================================
-   HEALTH CHECK
-================================ */
+// Express error handler middleware (must be after all routes)
+app.use((err, req, res, next) => {
+  console.error('Express route error:', err);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal Server Error',
+    error: process.env.NODE_ENV === 'production' ? undefined : err.stack
+  });
+});
 
 app.get('/', (req, res) => {
   res.json({ status: 'Server running 🚀' });

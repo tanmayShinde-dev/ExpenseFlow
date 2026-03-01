@@ -1,57 +1,61 @@
-const FinancialEvent = require('../models/FinancialEvent');
-const eventDiffEngine = require('../utils/eventDiffEngine');
+const ledgerRepository = require('../repositories/ledgerRepository');
+const diffReconstructor = require('../utils/diffReconstructor');
+const logger = require('../utils/structuredLogger');
 
 /**
- * Forensic Replay Engine
- * Issue #680: Reconstructs state from the event log for any point in history.
+ * Forensic Replay Engine Service
+ * Issue #782: Reconstructing entity state by replaying financial events.
+ * Allows "Time-Travel" debugging of any record in the system.
  */
 class ForensicReplayEngine {
     /**
-     * Replay an entity's state to a specific timestamp
+     * Reconstruct state of an entity at a specific point in time
      */
-    async replayToTime(entityId, timestamp) {
-        const targetDate = new Date(timestamp);
+    async getPointInTimeState(entityId, timestamp) {
+        logger.info(`[ForensicEngine] Reconstructing state for ${entityId} at ${timestamp}`);
 
-        // 1. Fetch all events for this entity up to the timestamp
-        const events = await FinancialEvent.find({
+        // 1. Fetch events up to that timestamp
+        const events = await ledgerRepository.getEventStream(entityId, { endTimestamp: timestamp });
+
+        if (events.length === 0) {
+            return null;
+        }
+
+        // 2. Replay events to build state
+        const state = diffReconstructor.reconstruct({}, events);
+
+        return {
             entityId,
-            'metadata.timestamp': { $lte: targetDate }
-        }).sort({ version: 1 });
-
-        if (!events.length) return null;
-
-        // 2. Start with an empty object and apply events in order
-        return eventDiffEngine.reconstruct({}, events);
+            timestamp,
+            version: events[events.length - 1].sequence,
+            state
+        };
     }
 
     /**
-     * Replay an entity's state to a specific version
+     * Get a chronological diff history for an entity
      */
-    async replayToVersion(entityId, version) {
-        const events = await FinancialEvent.find({
-            entityId,
-            version: { $lte: version }
-        }).sort({ version: 1 });
+    async getAuditHistory(entityId) {
+        const events = await ledgerRepository.getEventStream(entityId);
+        const history = [];
 
-        if (!events.length) return null;
+        let lastState = {};
+        for (const event of events) {
+            const currentState = diffReconstructor.reconstruct(lastState, [event]);
+            const diff = diffReconstructor.getDiff(lastState, currentState);
 
-        return eventDiffEngine.reconstruct({}, events);
-    }
+            history.push({
+                sequence: event.sequence,
+                timestamp: event.timestamp,
+                eventType: event.eventType,
+                performedBy: event.performedBy,
+                changes: diff
+            });
 
-    /**
-     * Construct a forensic audit report for an entity
-     */
-    async generateAuditTrail(entityId) {
-        const events = await FinancialEvent.find({ entityId }).sort({ version: 1 }).populate('userId', 'name email');
+            lastState = currentState;
+        }
 
-        return events.map(event => ({
-            version: event.version,
-            action: event.eventType,
-            actor: event.userId.name,
-            timestamp: event.metadata.timestamp,
-            changes: event.payload._isDelta ? event.payload.diff : 'FULL_SNAPSHOT',
-            correlationId: event.metadata.correlationId
-        }));
+        return history;
     }
 }
 
