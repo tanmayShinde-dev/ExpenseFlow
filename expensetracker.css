@@ -1,6 +1,5 @@
-
 /* ==============================
-   VARIABLES
+   ROOT VARIABLES + THEMES
 ============================== */
 .social-link:hover,
 .social-link:focus-visible {
@@ -11,7 +10,6 @@
 
 /* ==============================
    AI ADVISOR FLOATING BUTTON
-============================== */
 .ai-advisor-btn {
   position: fixed;
   bottom: 2rem;
@@ -68,74 +66,41 @@
   }
 }
   --bg-tertiary: #164863;
-  --bg-glass: rgba(0, 255, 255, 0.05);
-  background-color: paleturquoise;
-
   --text-primary: #e0f7fa;
   --text-secondary: #7dd3fc;
-  --text-accent: #06b6d4;
-
   --accent-primary: #06b6d4;
   --accent-secondary: #0ea5e9;
-
   --border-color: #155e75;
-  --shadow-card: 0 8px 16px rgba(0, 0, 0, 0.5);
+  --navbar-bg: rgba(1, 71, 121, 0.7);
 }
 
-/* --------------------------
-   NEON THEME
---------------------------- */
+/* NEON THEME */
 html[data-theme="neon"] {
   --bg-primary: #0d0d0d;
   --bg-secondary: #1a1a1a;
-  --bg-tertiary: #222222;
-  --bg-glass: rgba(0, 255, 217, 0.08);
-  background-color: #00c853;
-
   --text-primary: #eaff00;
   --text-secondary: #00ffd9;
-  --text-accent: #ff2dfc;
-
   --accent-primary: #00ffd9;
   --accent-secondary: #ff2dfc;
-
   --border-color: #00ffd9;
-  --shadow-card: 0 0 20px rgba(0, 255, 217, 0.3);
+  --navbar-bg: rgba(134, 1, 63, 0.8);
 }
 
-/* --------------------------
-   PASTEL THEME
---------------------------- */
+/* PASTEL THEME */
 html[data-theme="pastel"] {
   --bg-primary: #fdf6f9;
   --bg-secondary: #fceef5;
-  --bg-tertiary: #f8d7e5;
-  --bg-glass: rgba(255, 200, 220, 0.2);
-background-color: #f8d7e5;
   --text-primary: #5c5470;
   --text-secondary: #9d8189;
-  --text-accent: #c77dff;
-
   --accent-primary: #ff8fab;
   --accent-secondary: #c77dff;
-
   --border-color: #f3c4d3;
-  --shadow-card: 0 8px 16px rgba(200, 150, 200, 0.2);
-}
-*/* Reset */
-*,
-*::before,
-*::after {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+  --navbar-bg: rgba(252,238,245,0.85);
 }
 
-/* Scroll behavior + font */
-html {
-  scroll-behavior: smooth;
-}
-
+/* ==============================
+   BODY + FLOATING BACKGROUND
+============================== */
 body {
   width: 100%;
   min-height: 100vh;
@@ -145,188 +110,154 @@ body {
   line-height: 1.6;
   overflow-x: hidden;
   transition: var(--transition);
-
-  /* subtle gradient overlay for visual depth */
-  background-image:
-    radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.2) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(255, 107, 157, 0.2) 0%, transparent 50%),
-    radial-gradient(circle at 40% 40%, rgba(100, 255, 218, 0.15) 0%, transparent 50%);
-  background-blend-mode: overlay;
-}
-/* SETTINGS CONTAINER */
-.settings-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-/* Hide default ugly arrow */
-.theme-select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  color: #e5e7eb;
-  padding: 0.4rem 2rem 0.4rem 0.7rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: 0.3s ease;
   position: relative;
+  margin: 0;
+  padding-top: 120px; /* for fixed navbar */
 }
 
-/* Hover */
-.theme-select:hover {
-  border-color: #22c55e;
-}
-
-/* Focus */
-.theme-select:focus {
-  outline: none;
-  border-color: #22c55e;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
-}
-
-/* Optional custom arrow */
-.settings-item {
-  position: relative;
-}
-
-.settings-item::after {
-  content: "▾";
-  position: absolute;
-  right: 8px;
+/* Floating BG Container */
+#bg-container {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
   pointer-events: none;
-  font-size: 0.7rem;
-  color: #9ca3af;
+  z-index: 0; /* behind navbar and content */
 }
 
-/* Header Styles */
-/* ===============================
-   FIXED HEADER
-================================ */
-/* ===============================
-   FIXED GLASS HEADER
-================================ */
-/* ===============================
-   BASE VARIABLES
-================================ */
-:root {
-  --bg-dark: #0f172a;
-  --glass-bg: rgba(15, 23, 42, 0.85);
-  --border-light: rgba(255, 255, 255, 0.08);
-  --text-light: #e5e7eb;
-  --text-muted: #9ca3af;
-  --green: #22c55e;
-  --red: #ef4444;
+.bg-shape {
+  position: absolute;
+  width: 200px;
+  opacity: 0.7;
+  animation: float 12s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 20px rgba(255,255,255,0.3));
 }
 
+/* Individual positioning */
+.bg-star { top: 5%; left: 5%; animation-duration: 12s; }
+.bg-moon { top: 60%; right: 10%; animation-duration: 14s; }
+.bg-donut { bottom: 15%; left: 40%; animation-duration: 16s; }
+.bg-jelly { top: 30%; right: 30%; animation-duration: 18s; }
+
+/* Float animation */
+@keyframes float {
+  0% { transform: translateY(0px) translateX(0px) rotate(0deg); }
+  50% { transform: translateY(-40px) translateX(20px) rotate(15deg); }
+  100% { transform: translateY(40px) translateX(-20px) rotate(-15deg); }
+}
+
+
+
 /* ===============================
-   FIXED GLASS HEADER
+   BODY + FLOATING BACKGROUND
+================================ */
+
+
+/* Floating background container */
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+}
+
+body{
+  height:100vh;
+  background:#00082e; /* Persian Blue fallback */
+   cursor:none;
+}
+
+.cursor{
+  width:18px;
+  height:18px;
+  border-radius:50%;
+  position:fixed;
+  pointer-events:none;
+  background:#ff4da6;
+  box-shadow:
+    0 0 10px #ff4da6,
+    0 0 25px #ff4da6,
+    0 0 40px #ff4da6;
+  transform:translate(-50%, -50%);
+  z-index:9999;
+}
+/* Background Video */
+.bg-video{
+  position:fixed;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  z-index:-1;
+  filter: brightness(0.6) contrast(1.1) saturate(1.2);
+}
+/* ===============================
+   HEADER + NAVBAR
 ================================ */
 .header {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  backdrop-filter: blur(16px);
-  background: var(--glass-bg);
-  border-bottom: 1px solid var(--border-light);
-  z-index: 1000;
+  top:0;
+  left:0;
+  width:100%;
+  z-index:1000;
+  backdrop-filter: blur(14px);
+  background: var(--navbar-bg);
+  border-bottom: 1px solid var(--border-color);
+  transition: var(--transition);
 }
 
-/* Prevent overlap */
-body {
-  margin: 0;
-  padding-top: 120px;
-  font-family: 'Segoe UI', sans-serif;
-  background: var(--bg-dark);
-  color: var(--text-light);
-}
-
-/* ===============================
-   NAV CONTAINER
-================================ */
 .navbar {
   max-width: 1300px;
   margin: auto;
-  padding: 0.8rem 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  background: var(--surface-color);
-  border-bottom: 1px solid var(--border-color);
-}
-
-/* ===============================
-   TOP ROW
-================================ */
-.nav-container {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
+  padding: 0.45rem 1rem; /* compact height */
+  gap: 0.5rem;
+  position: relative;
+  background-color: var(--navbar-bg);
 }
 
 /* Logo */
 .nav-logo {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
   font-weight: 600;
-  font-size: 1.2rem;
-  color: var(--text-light);
+  font-size: 1rem;
+  color: var(--text-primary);
   text-decoration: none;
 }
 
-.nav-logo i {
-  color: var(--green);
-}
+.nav-logo i { color: var(--accent-primary); }
 
-/* ===============================
-   NAV LINKS
-================================ */
+/* Nav links */
 .nav-menu {
   display: flex;
-  gap: 1rem;
+  align-items: center;
+  gap: 0.5rem;
   flex-wrap: wrap;
 }
 
 .nav-link {
-  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.55rem;
   border-radius: 6px;
   text-decoration: none;
-  font-size: 0.9rem;
-  color: var(--text-muted);
-  transition: 0.25s ease;
+  color: var(--text-secondary);
+  transition: var(--transition);
 }
 
 .nav-link:hover,
 .nav-link.active {
-  background: rgba(34, 197, 94, 0.12);
-  color: var(--green);
-}
-.card {
-  background: var(--surface-color);
-  border: 1px solid var(--border-color);
+  color: var(--accent-primary);
+  background: rgba(255,255,255,0.1);
 }
 
-/* Buttons */
-button {
-  background: var(--primary-color);
-  color: white;
-  border: none;
-}
-/* ===============================
-   RIGHT ACTIONS
-================================ */
+/* Right actions */
 .nav-actions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.5rem;
 }
 
 /* Search */
@@ -335,51 +266,73 @@ button {
 }
 
 .nav-search input {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-light);
-  padding: 0.45rem 0.6rem 0.45rem 2rem;
+  padding: 0.3rem 0.4rem 0.3rem 1.6rem;
   border-radius: 6px;
-  color: var(--text-light);
+  border: 1px solid var(--border-color);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  width: 140px;
   outline: none;
-  width: 200px;
-  transition: 0.3s;
+  transition: var(--transition);
 }
 
 .nav-search input:focus {
-  border-color: var(--green);
+  border-color: var(--accent-primary);
 }
 
-.nav-search i {
-  position: absolute;
-  left: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-/* Notification */
+/* Notification button */
 .nav-icon-btn {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255,255,255,0.05);
   border: none;
-  padding: 0.45rem;
+  padding: 0.35rem;
   border-radius: 50%;
   cursor: pointer;
-  color: var(--text-light);
+  color: var(--text-primary);
   position: relative;
+  transition: var(--transition);
 }
 
 .notification-badge {
   position: absolute;
   top: -4px;
   right: -4px;
-  background: var(--green);
+  background: transparent;
   color: white;
   font-size: 0.65rem;
   padding: 2px 5px;
   border-radius: 10px;
 }
 
+/* Settings dropdown */
+.settings-item select {
+  padding: 0.25rem 1.5rem 0.25rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  appearance: none;
+  cursor: pointer;
+}
+
+.settings-item::after {
+  content: "▾";
+  position: absolute;
+  right: 8px;
+  font-size: 0.7rem;
+  pointer-events: none;
+  color: var(--text-secondary);
+}
+
+/* ===============================
+   Responsive
+================================ */
+@media screen and (max-width: 900px) {
+  .nav-menu { flex-direction: column; gap:0.3rem; width:100%; }
+  .nav-search input { width: 100%; }
+  .navbar { flex-direction: column; gap:0.3rem; padding:0.35rem 1rem; }
+}
 /* ===============================
    SECOND ROW (Income + Expense + Profile)
 ================================ */

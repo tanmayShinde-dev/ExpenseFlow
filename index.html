@@ -8,6 +8,11 @@
     <meta name="keywords" content="expense tracker, budget, finance, money management, PWA">
     <meta name="author" content="ExpenseFlow">
 
+<!-- CSS Files -->
+
+<link rel="stylesheet" href="expensetracker.css">
+
+
     <!-- PWA Meta Tags -->
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,7 +36,10 @@
 
 </head>
 <body>
-
+  <div class="cursor"></div>
+ <video autoplay muted loop playsinline class="bg-video">
+    <source src="client/assets/bodybg.mp4" type="video/mp4">
+  </video>
   <!-- Main Content -->
   <main class="main-content">
     
@@ -1520,6 +1528,15 @@ themeSelect.addEventListener("change", function () {
     localStorage.setItem("theme", selectedTheme);
   }
 });
+
+/*cursor*/
+const cursor = document.querySelector(".cursor");
+
+document.addEventListener("mousemove", (e) => {
+  cursor.style.left = e.clientX + "px";
+  cursor.style.top = e.clientY + "px";
+});
     </script>
+   
   </body>
 </html>
