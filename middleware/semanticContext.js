@@ -152,11 +152,23 @@ async function _enrichResponse(req, data, options) {
 
     // Check cache
     const cacheKey = _generateCacheKey(userId, workspaceId, contextText);
-    const cached = contextCache.get(cacheKey);
-    
-    if (cached && Date.now() - cached.timestamp < options.cacheTTL) {
+    let cached = null;
+
+if (contextCache.has(cacheKey)) {
+    cached = contextCache.get(cacheKey);
+
+    // If expired, delete it
+    if (Date.now() - cached.timestamp >= options.cacheTTL) {
+        contextCache.delete(cacheKey);
+        cached = null;
+    } else {
+        // 🔥 Move to end (mark as recently used)
+        contextCache.delete(cacheKey);
+        contextCache.set(cacheKey, cached);
+
         return _mergeSemanticContext(data, cached.context, options);
     }
+}
 
     // Perform semantic search for related items
     const semanticResults = await searchIntelligence.semanticSearch(contextText, {
@@ -176,7 +188,6 @@ async function _enrichResponse(req, data, options) {
         suggestions: await _generateSuggestions(contextText, userId, workspaceId)
     };
 
-    // Cache result
     _cacheContext(cacheKey, semanticContext);
 
     // Merge with original data
@@ -284,16 +295,21 @@ function _generateCacheKey(userId, workspaceId, text) {
  * Cache semantic context
  */
 function _cacheContext(key, context) {
-    // Prune cache if full
-    if (contextCache.size >= CACHE_MAX_SIZE) {
-        const firstKey = contextCache.keys().next().value;
-        contextCache.delete(firstKey);
+    // If key exists, delete it to refresh insertion order
+    if (contextCache.has(key)) {
+        contextCache.delete(key);
     }
-    
+
     contextCache.set(key, {
         context,
         timestamp: Date.now()
     });
+
+    // 🚀 LRU eviction (remove least recently used)
+    if (contextCache.size > CACHE_MAX_SIZE) {
+        const lruKey = contextCache.keys().next().value;
+        contextCache.delete(lruKey);
+    }
 }
 
 /**
