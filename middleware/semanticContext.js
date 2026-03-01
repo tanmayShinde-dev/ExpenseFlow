@@ -225,10 +225,10 @@ function _extractContextText(data) {
 /**
  * Generate suggestions based on context
  */
-async _generateSuggestions(contextText, userId, workspaceId) {
+async function _generateSuggestions(contextText, userId, workspaceId) {
     try {
         return await searchIntelligence.getSuggestions(
-            contextText.split(' ').slice(0, 3).join(' '), // Use first few words
+            contextText.split(' ').slice(0, 3).join(' '),
             userId,
             workspaceId,
             3
