@@ -5,6 +5,24 @@ const cors = require('cors');
 const helmet = require('helmet');
 require('dotenv').config();
 
+const authRoutes = require('./routes/auth');
+const expenseRoutes = require('./routes/expenses');
+const syncRoutes = require('./routes/sync');
+const splitsRoutes = require('./routes/splits');
+const groupsRoutes = require('./routes/groups');
+const backupRoutes = require('./routes/backups');
+const backupService = require('./services/backupService');
+const twoFactorAuthRoutes = require('./routes/twoFactorAuth');
+const cron = require('node-cron');
+
+// Distributed real-time sync dependencies
+const Redis = require('ioredis');
+const redisPub = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+const redisSub = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
+// Redis pub/sub channel for distributed sync
+const SYNC_CHANNEL = 'expenseflow:sync';
+
 const app = express();
 const server = http.createServer(app);
 
@@ -125,15 +143,60 @@ async function connectDatabase() {
   }
 }
 
-connectDatabase();
+  // Listen for client expense changes and broadcast to Redis
+  socket.on('expense_created', (expense) => {
+    io.emit('expense_created', expense);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_created', expense }));
+  });
 
-/* ================================
-   ROUTES
-================================ */
+  socket.on('expense_updated', (expense) => {
+    io.emit('expense_updated', expense);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_updated', expense }));
+  });
 
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/users', require('./routes/users'));
-app.use('/api/expenses', require('./routes/expenses'));
+  socket.on('expense_deleted', (data) => {
+    io.emit('expense_deleted', data);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_deleted', data }));
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`User ${socket.user.name} disconnected`);
+  });
+});
+
+// Listen for Redis sync events and broadcast to local clients
+redisSub.subscribe(SYNC_CHANNEL, (err) => {
+  if (err) console.error('Redis subscribe error:', err);
+});
+
+redisSub.on('message', (channel, message) => {
+  if (channel !== SYNC_CHANNEL) return;
+  try {
+    const payload = JSON.parse(message);
+    if (payload.type === 'expense_created') {
+      io.emit('expense_created', payload.expense);
+    } else if (payload.type === 'expense_updated') {
+      io.emit('expense_updated', payload.expense);
+    } else if (payload.type === 'expense_deleted') {
+      io.emit('expense_deleted', payload.data);
+    }
+  } catch (e) {
+    console.error('Redis sync event error:', e);
+  }
+});
+
+// Routes
+app.use('/api/auth', require('./middleware/rateLimiter').authLimiter, authRoutes);
+app.use('/api/expenses', require('./middleware/rateLimiter').expenseLimiter, expenseRoutes);
+app.use('/api/sync', syncRoutes);
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/receipts', require('./middleware/rateLimiter').uploadLimiter, require('./routes/receipts'));
+app.use('/api/budgets', require('./routes/budgets'));
+app.use('/api/goals', require('./routes/goals'));
+app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/currency', require('./routes/currency'));
+app.use('/api/groups', require('./routes/groups'));
+app.use('/api/splits', require('./routes/splits'));
 app.use('/api/workspaces', require('./routes/workspaces'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/export', require('./routes/export'));

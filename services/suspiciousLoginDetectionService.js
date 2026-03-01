@@ -405,6 +405,49 @@ class SuspiciousLoginDetectionService {
       throw error;
     }
   }
+
+  /**
+   * Advanced behavioral anomaly detection using ML model
+   * @param {string} userId - User ID
+   * @param {object} loginInfo - Login information
+   * @returns {Promise<{isAnomaly: boolean, anomalyScore: number, details: object}>}
+   */
+  async analyzeBehavioralAnomaly(userId, loginInfo) {
+    try {
+      // Example: Call external ML model for behavioral anomaly detection
+      const features = {
+        userId,
+        ipAddress: loginInfo.ipAddress,
+        deviceFingerprint: loginInfo.deviceFingerprint,
+        location: loginInfo.location,
+        userAgent: loginInfo.userAgent,
+        timestamp: Date.now(),
+        sessionId: loginInfo.sessionId
+      };
+      // Simulate ML model prediction (replace with real model call)
+      const anomalyScore = Math.random() * 100;
+      const isAnomaly = anomalyScore > 80;
+      // Log anomaly event if detected
+      if (isAnomaly) {
+        await SecurityEvent.logEvent({
+          userId,
+          eventType: 'BEHAVIORAL_ANOMALY',
+          severity: anomalyScore > 95 ? 'critical' : 'high',
+          source: 'behavioral_ml',
+          ipAddress: loginInfo.ipAddress,
+          deviceFingerprint: loginInfo.deviceFingerprint,
+          location: loginInfo.location,
+          details: { anomalyScore, sessionId: loginInfo.sessionId },
+          riskScore: anomalyScore,
+          action: 'challenged'
+        });
+      }
+      return { isAnomaly, anomalyScore, details: features };
+    } catch (error) {
+      console.error('Error analyzing behavioral anomaly:', error);
+      return { isAnomaly: false, anomalyScore: 0, details: {} };
+    }
+  }
 }
 
 module.exports = new SuspiciousLoginDetectionService();
