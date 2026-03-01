@@ -96,6 +96,28 @@ class SyncManager {
 
         return { success: true };
     }
+
+    /**
+     * Coordinate distributed vector clocks for sharded events.
+     * Issue #842: Ensures causal ordering across distributed shard collections.
+     */
+    async coordinateVectorClock(shardId, workspaceId, serverInstanceId) {
+        const key = `vclock:${shardId}:${workspaceId}`;
+        const redisCustom = require('ioredis');
+        const redis = new redisCustom(process.env.REDIS_URL);
+
+        // Increment logical clock for this instance/shard/workspace tuple
+        const newClockValue = await redis.hincrby(key, serverInstanceId, 1);
+
+        // Fetch full vector for causality checks
+        const fullVector = await redis.hgetall(key);
+
+        return {
+            instanceId: serverInstanceId,
+            version: newClockValue,
+            vector: fullVector
+        };
+    }
 }
 
 module.exports = new SyncManager();

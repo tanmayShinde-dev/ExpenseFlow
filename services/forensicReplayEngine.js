@@ -1,42 +1,57 @@
 const ledgerRepository = require('../repositories/ledgerRepository');
 const diffReconstructor = require('../utils/diffReconstructor');
+const TemporalMath = require('../utils/temporalMath');
 const logger = require('../utils/structuredLogger');
 
 /**
  * Forensic Replay Engine Service
- * Issue #782: Reconstructing entity state by replaying financial events.
- * Allows "Time-Travel" debugging of any record in the system.
+ * Issue #782 & #842: Reconstructing entity state by replaying financial events across shards.
  */
 class ForensicReplayEngine {
     /**
-     * Reconstruct state of an entity at a specific point in time
+     * Reconstruct state of an entity at a specific point in time (Sharded Support)
      */
-    async getPointInTimeState(entityId, timestamp) {
-        logger.info(`[ForensicEngine] Reconstructing state for ${entityId} at ${timestamp}`);
+    async getPointInTimeState(entityId, timestamp, options = {}) {
+        const { tenantCluster = 'GLOBAL' } = options;
+        logger.info(`[ForensicEngine] Reconstructing sharded state for ${entityId} at ${timestamp}`);
 
-        // 1. Fetch events up to that timestamp
-        const events = await ledgerRepository.getEventStream(entityId, { endTimestamp: timestamp });
+        // 1. Fetch events across shards up to that timestamp
+        const events = await ledgerRepository.getEventStream(entityId, {
+            endTimestamp: timestamp,
+            tenantCluster
+        });
 
         if (events.length === 0) {
             return null;
         }
 
-        // 2. Replay events to build state
-        const state = diffReconstructor.reconstruct({}, events);
+        // 2. Map-Reduce style reconstruction: Play shards individually then merge
+        // For efficiency, we group by shard boundary if the stream is huge
+        const temporalBuckets = TemporalMath.sliceByTime(events);
+        const partialStates = [];
+
+        for (const bucket of Object.values(temporalBuckets)) {
+            const partial = diffReconstructor.reconstruct({}, bucket);
+            partialStates.push(partial);
+        }
+
+        const finalState = TemporalMath.mergeStates(partialStates);
 
         return {
             entityId,
             timestamp,
             version: events[events.length - 1].sequence,
-            state
+            state: finalState,
+            shardCount: Object.keys(temporalBuckets).length
         };
     }
 
     /**
-     * Get a chronological diff history for an entity
+     * Get a chronological diff history for an entity (Sharded Support)
      */
-    async getAuditHistory(entityId) {
-        const events = await ledgerRepository.getEventStream(entityId);
+    async getAuditHistory(entityId, options = {}) {
+        const { tenantCluster = 'GLOBAL' } = options;
+        const events = await ledgerRepository.getEventStream(entityId, { tenantCluster });
         const history = [];
 
         let lastState = {};
