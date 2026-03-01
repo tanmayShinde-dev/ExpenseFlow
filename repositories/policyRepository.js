@@ -1,35 +1,27 @@
-const PolicyNode = require('../models/PolicyNode');
 const BaseRepository = require('./baseRepository');
+const PolicyNode = require('../models/PolicyNode');
 
 /**
  * Policy Repository
- * Issue #757: Specialized data access for hierarchical policy nodes.
+ * Issue #780: Optimized access for inherited rules.
  */
 class PolicyRepository extends BaseRepository {
     constructor() {
         super(PolicyNode);
     }
 
-    async findByTarget(level, targetId) {
-        return await this.findOne({ level, targetId, isActive: true });
-    }
-
-    async getAncestors(nodeId) {
-        const ancestors = [];
-        let currentNode = await this.findById(nodeId);
-
-        while (currentNode && currentNode.parentId) {
-            currentNode = await this.findById(currentNode.parentId);
-            if (currentNode) ancestors.push(currentNode);
-        }
-
-        return ancestors;
-    }
-
-    async updateRules(nodeId, newRules) {
-        return await this.updateById(nodeId, {
-            $set: { rules: newRules }
-        });
+    /**
+     * Retrieve active policies for a workspace and its ancestors.
+     */
+    async getInheritedPolicies(paths) {
+        return await PolicyNode.find({
+            workspaceId: { $in: paths },
+            isActive: true,
+            $or: [
+                { workspaceId: paths[0] }, // Direct rules
+                { isInheritable: true }    // Ancestor inheritable rules
+            ]
+        }).sort({ priority: -1 }).lean();
     }
 }
 

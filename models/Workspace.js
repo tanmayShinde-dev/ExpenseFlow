@@ -141,7 +141,10 @@ const workspaceSchema = new mongoose.Schema({
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 
   // Issue #741: Atomic Invalidation Tracking
-  cacheEpoch: { type: Number, default: 0 },
+  epochSequence: { type: Number, default: 0 },
+
+  // Issue #769: Distributed Write-Ahead Journaling
+  journalVersionEpoch: { type: Number, default: 0 },
 
   // Hierarchy fields (#629)
   parentWorkspace: {
@@ -169,6 +172,28 @@ const workspaceSchema = new mongoose.Schema({
     registrationDate: Date,
     hqAddress: String,
     consolidatedBaseCurrency: { type: String, default: 'USD' }
+  },
+
+  // Issue #796: Semantic Search Cluster Configuration
+  semanticCluster: {
+    clusterId: { type: String, index: true },
+    embeddingModel: { type: String, default: 'local-transformer' },
+    dimension: { type: Number, default: 384 },
+    lastReindexAt: Date,
+    totalIndexedEntities: { type: Number, default: 0 },
+    clusterHealth: {
+      type: String,
+      enum: ['HEALTHY', 'DEGRADED', 'REINDEXING', 'FAILED'],
+      default: 'HEALTHY'
+    },
+    settings: {
+      autoReindex: { type: Boolean, default: true },
+      reindexIntervalDays: { type: Number, default: 30 },
+      minSimilarityThreshold: { type: Number, default: 0.3 },
+      maxResultsPerQuery: { type: Number, default: 50 },
+      enableRAGContext: { type: Boolean, default: true },
+      feedbackLearningEnabled: { type: Boolean, default: true }
+    }
   },
 
   inheritanceSettings: {
@@ -624,6 +649,60 @@ workspaceSchema.methods.addMessage = function (discussionId, userId, text, menti
 
   discussion.lastMessageAt = new Date();
   return this.save();
+};
+
+// Issue #796: Instance method to get semantic cluster configuration
+workspaceSchema.methods.getSemanticClusterConfig = function () {
+  return {
+    clusterId: this.semanticCluster?.clusterId || `${this._id}_default`,
+    embeddingModel: this.semanticCluster?.embeddingModel || 'local-transformer',
+    dimension: this.semanticCluster?.dimension || 384,
+    settings: {
+      autoReindex: this.semanticCluster?.settings?.autoReindex ?? true,
+      reindexIntervalDays: this.semanticCluster?.settings?.reindexIntervalDays || 30,
+      minSimilarityThreshold: this.semanticCluster?.settings?.minSimilarityThreshold || 0.3,
+      maxResultsPerQuery: this.semanticCluster?.settings?.maxResultsPerQuery || 50,
+      enableRAGContext: this.semanticCluster?.settings?.enableRAGContext ?? true,
+      feedbackLearningEnabled: this.semanticCluster?.settings?.feedbackLearningEnabled ?? true
+    }
+  };
+};
+
+// Issue #796: Instance method to update semantic cluster stats
+workspaceSchema.methods.updateSemanticClusterStats = async function (stats) {
+  this.semanticCluster = this.semanticCluster || {};
+  
+  if (!this.semanticCluster.clusterId) {
+    this.semanticCluster.clusterId = `${this._id}_default`;
+  }
+  
+  if (stats.totalIndexedEntities !== undefined) {
+    this.semanticCluster.totalIndexedEntities = stats.totalIndexedEntities;
+  }
+  if (stats.lastReindexAt) {
+    this.semanticCluster.lastReindexAt = stats.lastReindexAt;
+  }
+  if (stats.clusterHealth) {
+    this.semanticCluster.clusterHealth = stats.clusterHealth;
+  }
+  
+  return this.save();
+};
+
+// Issue #796: Static method to get workspaces needing reindex
+workspaceSchema.statics.getWorkspacesNeedingReindex = async function () {
+  const reindexThresholdDate = new Date();
+  reindexThresholdDate.setDate(reindexThresholdDate.getDate() - 30); // Default 30 days
+  
+  return this.find({
+    status: 'active',
+    $or: [
+      { 'semanticCluster.lastReindexAt': { $lt: reindexThresholdDate } },
+      { 'semanticCluster.lastReindexAt': { $exists: false } },
+      { 'semanticCluster.clusterHealth': 'DEGRADED' }
+    ],
+    'semanticCluster.settings.autoReindex': { $ne: false }
+  }).select('_id name semanticCluster');
 };
 
 // Export role definitions for use in middleware

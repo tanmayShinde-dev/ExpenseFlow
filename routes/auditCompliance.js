@@ -1,12 +1,15 @@
 const express = require('express');
-const router = express.Router();
-const auth = require('../middleware/auth');
 const { body, query, validationResult } = require('express-validator');
-const auditComplianceService = require('../services/auditComplianceService');
-const ComplianceViolation = require('../models/ComplianceViolation');
+const auth = require('../middleware/auth');
 const ImmutableAuditLog = require('../models/ImmutableAuditLog');
+const ComplianceViolation = require('../models/ComplianceViolation');
+const Workspace = require('../models/Workspace');
+const auditComplianceService = require('../services/auditComplianceService');
 
-// Admin middleware for compliance operations
+const router = express.Router();
+
+const getUserId = (req) => req.user?._id || req.user?.id;
+
 const adminAuth = (req, res, next) => {
   if (req.user.role !== 'admin' && req.user.role !== 'compliance_officer') {
     return res.status(403).json({
@@ -17,102 +20,174 @@ const adminAuth = (req, res, next) => {
   next();
 };
 
-// Get audit logs with filtering
+const ensureWorkspaceAccess = async (req, workspaceId) => {
+  if (!workspaceId) return;
+  const userId = getUserId(req);
+  const hasAccess = await Workspace.exists({
+    _id: workspaceId,
+    $or: [{ owner: userId }, { 'members.user': userId }]
+  });
+  if (!hasAccess) {
+    const err = new Error('Workspace access denied');
+    err.status = 403;
+    throw err;
+  }
+};
+
+const buildDateRange = (start, end) => {
+  if (!start && !end) return undefined;
+  const range = {};
+  if (start) range.$gte = new Date(start);
+  if (end) range.$lte = new Date(end);
+  return range;
+};
+
 router.get('/audit-logs', auth, adminAuth, [
   query('workspaceId').optional().isMongoId(),
   query('userId').optional().isMongoId(),
   query('action').optional().isString(),
   query('entityType').optional().isString(),
+  query('requestId').optional().isString(),
+  query('correlationId').optional().isString(),
+  query('sessionId').optional().isString(),
+  query('riskLevel').optional().isIn(['low', 'medium', 'high', 'critical']),
   query('startDate').optional().isISO8601(),
   query('endDate').optional().isISO8601(),
-  query('riskLevel').optional().isIn(['low', 'medium', 'high', 'critical']),
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 1000 })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 100;
+    await ensureWorkspaceAccess(req, req.query.workspaceId);
+
+    const page = Number(req.query.page || 1);
+    const limit = Number(req.query.limit || 100);
     const skip = (page - 1) * limit;
 
-    const query = {};
-    if (req.query.workspaceId) query.workspaceId = req.query.workspaceId;
-    if (req.query.userId) query.userId = req.query.userId;
-    if (req.query.action) query.action = req.query.action;
-    if (req.query.entityType) query.entityType = req.query.entityType;
-    if (req.query.riskLevel) query.riskLevel = req.query.riskLevel;
-    
-    if (req.query.startDate || req.query.endDate) {
-      query.createdAt = {};
-      if (req.query.startDate) query.createdAt.$gte = new Date(req.query.startDate);
-      if (req.query.endDate) query.createdAt.$lte = new Date(req.query.endDate);
-    }
+    const q = {};
+    if (req.query.workspaceId) q.workspaceId = req.query.workspaceId;
+    if (req.query.userId) q.userId = req.query.userId;
+    if (req.query.action) q.action = req.query.action;
+    if (req.query.entityType) q.entityType = req.query.entityType;
+    if (req.query.riskLevel) q.riskLevel = req.query.riskLevel;
+    if (req.query.requestId) q['metadata.requestId'] = req.query.requestId;
+    if (req.query.correlationId) q['metadata.correlationId'] = req.query.correlationId;
+    if (req.query.sessionId) q['metadata.sessionId'] = req.query.sessionId;
+
+    const createdAt = buildDateRange(req.query.startDate, req.query.endDate);
+    if (createdAt) q.createdAt = createdAt;
 
     const [logs, total] = await Promise.all([
-      ImmutableAuditLog.find(query)
+      ImmutableAuditLog.find(q)
         .populate('userId', 'name email')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit),
-      ImmutableAuditLog.countDocuments(query)
+        .limit(limit)
+        .lean(),
+      ImmutableAuditLog.countDocuments(q)
     ]);
 
     res.json({
       success: true,
       data: {
         logs,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        }
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) }
       }
     });
   } catch (error) {
-    console.error('Get audit logs error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get audit logs'
-    });
+    res.status(error.status || 500).json({ success: false, message: error.message || 'Failed to fetch audit logs' });
   }
 });
 
-// Verify audit log integrity
 router.post('/audit-logs/verify-integrity', auth, adminAuth, [
+  body('workspaceId').optional().isMongoId(),
   body('startSequence').optional().isInt({ min: 1 }),
   body('endSequence').optional().isInt({ min: 1 })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { startSequence, endSequence } = req.body;
-    const verification = await auditComplianceService.verifyAuditIntegrity(startSequence, endSequence);
+    await ensureWorkspaceAccess(req, req.body.workspaceId);
+    const data = await auditComplianceService.verifyAuditIntegrity(
+      req.body.startSequence ?? null,
+      req.body.endSequence ?? null,
+      req.body.workspaceId ?? null
+    );
 
-    res.json({
-      success: true,
-      data: verification
-    });
+    res.json({ success: true, data });
   } catch (error) {
-    console.error('Audit integrity verification error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to verify audit integrity'
-    });
+    res.status(error.status || 500).json({ success: false, message: error.message });
   }
 });
 
-// Get compliance violations
+router.get('/forensics/timeline', auth, adminAuth, [
+  query('workspaceId').optional().isMongoId(),
+  query('userId').optional().isMongoId(),
+  query('entityType').optional().isString(),
+  query('entityId').optional().isString(),
+  query('requestId').optional().isString(),
+  query('correlationId').optional().isString(),
+  query('sessionId').optional().isString(),
+  query('action').optional().isString(),
+  query('riskLevel').optional().isIn(['low', 'medium', 'high', 'critical']),
+  query('startDate').optional().isISO8601(),
+  query('endDate').optional().isISO8601(),
+  query('limit').optional().isInt({ min: 1, max: 5000 })
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    await ensureWorkspaceAccess(req, req.query.workspaceId);
+
+    const data = await auditComplianceService.reconstructTimeline({
+      workspaceId: req.query.workspaceId,
+      userId: req.query.userId,
+      entityType: req.query.entityType,
+      entityId: req.query.entityId,
+      requestId: req.query.requestId,
+      correlationId: req.query.correlationId,
+      sessionId: req.query.sessionId,
+      action: req.query.action,
+      riskLevel: req.query.riskLevel,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      limit: req.query.limit
+    });
+
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/forensics/anomaly-correlation', auth, adminAuth, [
+  query('workspaceId').optional().isMongoId(),
+  query('startDate').optional().isISO8601(),
+  query('endDate').optional().isISO8601()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    await ensureWorkspaceAccess(req, req.query.workspaceId);
+
+    const data = await auditComplianceService.correlateAnomalies({
+      workspaceId: req.query.workspaceId,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate
+    });
+
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+});
+
 router.get('/compliance/violations', auth, adminAuth, [
   query('workspaceId').optional().isMongoId(),
-  query('standard').optional().isIn(['SOX', 'GDPR', 'PCI_DSS', 'HIPAA', 'SOC2', 'ISO27001']),
+  query('standard').optional().isIn(['SOX', 'GDPR', 'PCI_DSS', 'HIPAA', 'SOC2', 'ISO27001', 'CCPA', 'PIPEDA']),
   query('severity').optional().isIn(['low', 'medium', 'high', 'critical']),
   query('status').optional().isIn(['open', 'investigating', 'remediation_in_progress', 'resolved', 'false_positive', 'accepted_risk']),
   query('page').optional().isInt({ min: 1 }),
@@ -120,51 +195,41 @@ router.get('/compliance/violations', auth, adminAuth, [
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    await ensureWorkspaceAccess(req, req.query.workspaceId);
 
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
+    const page = Number(req.query.page || 1);
+    const limit = Number(req.query.limit || 50);
     const skip = (page - 1) * limit;
 
-    const query = {};
-    if (req.query.workspaceId) query.workspaceId = req.query.workspaceId;
-    if (req.query.standard) query.standard = req.query.standard;
-    if (req.query.severity) query.severity = req.query.severity;
-    if (req.query.status) query.status = req.query.status;
+    const q = {};
+    if (req.query.workspaceId) q.workspaceId = req.query.workspaceId;
+    if (req.query.standard) q.standard = req.query.standard;
+    if (req.query.severity) q.severity = req.query.severity;
+    if (req.query.status) q.status = req.query.status;
 
     const [violations, total] = await Promise.all([
-      ComplianceViolation.find(query)
+      ComplianceViolation.find(q)
         .populate('remediation.assignedTo', 'name email')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit),
-      ComplianceViolation.countDocuments(query)
+        .limit(limit)
+        .lean(),
+      ComplianceViolation.countDocuments(q)
     ]);
 
     res.json({
       success: true,
       data: {
         violations,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        }
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) }
       }
     });
   } catch (error) {
-    console.error('Get compliance violations error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get compliance violations'
-    });
+    res.status(error.status || 500).json({ success: false, message: error.message });
   }
 });
 
-// Update compliance violation status
 router.put('/compliance/violations/:violationId', auth, adminAuth, [
   body('status').isIn(['open', 'investigating', 'remediation_in_progress', 'resolved', 'false_positive', 'accepted_risk']),
   body('assignedTo').optional().isMongoId(),
@@ -173,218 +238,174 @@ router.put('/compliance/violations/:violationId', auth, adminAuth, [
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { status, assignedTo, resolutionNotes, dueDate } = req.body;
-    const updateData = { status };
-
-    if (assignedTo) updateData['remediation.assignedTo'] = assignedTo;
-    if (dueDate) updateData['remediation.dueDate'] = new Date(dueDate);
-    if (status === 'resolved') {
+    const updateData = { status: req.body.status };
+    if (req.body.assignedTo) updateData['remediation.assignedTo'] = req.body.assignedTo;
+    if (req.body.dueDate) updateData['remediation.dueDate'] = new Date(req.body.dueDate);
+    if (req.body.status === 'resolved') {
       updateData.resolvedAt = new Date();
-      updateData.resolutionNotes = resolutionNotes;
+      updateData.resolutionNotes = req.body.resolutionNotes;
     }
-
-    // Add audit trail entry
-    const auditEntry = {
-      action: `Status changed to ${status}`,
-      performedBy: req.user.id,
-      timestamp: new Date(),
-      details: { previousStatus: req.body.previousStatus, newStatus: status }
-    };
 
     const violation = await ComplianceViolation.findOneAndUpdate(
       { violationId: req.params.violationId },
       {
         ...updateData,
-        $push: { auditTrail: auditEntry }
+        $push: {
+          auditTrail: {
+            action: `Status changed to ${req.body.status}`,
+            performedBy: getUserId(req),
+            timestamp: new Date(),
+            details: {
+              assignedTo: req.body.assignedTo,
+              dueDate: req.body.dueDate
+            }
+          }
+        }
       },
       { new: true }
     );
 
-    if (!violation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Compliance violation not found'
-      });
-    }
+    if (!violation) return res.status(404).json({ success: false, message: 'Compliance violation not found' });
 
-    // Log the compliance action
     await auditComplianceService.logImmutableAudit(
-      req.user.id,
+      getUserId(req),
       'compliance_violation_updated',
-      'compliance',
+      'compliance_violation',
       violation._id,
-      { after: { status, assignedTo, resolutionNotes } }
+      { after: updateData },
+      {
+        workspaceId: violation.workspaceId,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        sessionId: req.sessionId,
+        apiEndpoint: req.originalUrl,
+        requestId: req.headers['x-request-id'],
+        riskLevel: violation.severity === 'critical' ? 'high' : 'medium',
+        complianceFlags: [{ standard: violation.standard, status: 'review_required' }]
+      }
     );
 
-    res.json({
-      success: true,
-      data: violation
-    });
+    res.json({ success: true, data: violation });
   } catch (error) {
-    console.error('Update compliance violation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update compliance violation'
-    });
+    res.status(error.status || 500).json({ success: false, message: error.message });
   }
 });
 
-// Generate compliance report
 router.post('/compliance/reports', auth, adminAuth, [
-  body('standard').isIn(['SOX', 'GDPR', 'PCI_DSS', 'HIPAA', 'SOC2', 'ISO27001']),
+  body('standard').isIn(['SOX', 'GDPR', 'PCI_DSS', 'HIPAA', 'SOC2', 'ISO27001', 'CCPA', 'PIPEDA']),
   body('workspaceId').optional().isMongoId(),
   body('dateRange.start').optional().isISO8601(),
   body('dateRange.end').optional().isISO8601()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    await ensureWorkspaceAccess(req, req.body.workspaceId);
 
-    const { standard, workspaceId, dateRange } = req.body;
-    
     const report = await auditComplianceService.generateComplianceReport(
-      standard,
-      workspaceId,
-      dateRange
+      req.body.standard,
+      req.body.workspaceId || null,
+      req.body.dateRange || {}
     );
 
-    // Log report generation
     await auditComplianceService.logImmutableAudit(
-      req.user.id,
-      'report_generated',
+      getUserId(req),
+      'compliance_report_generated',
       'report',
-      report.generatedAt,
-      { after: { standard, workspaceId, dateRange } }
+      null,
+      { after: { standard: req.body.standard, workspaceId: req.body.workspaceId || null } },
+      {
+        workspaceId: req.body.workspaceId || null,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        sessionId: req.sessionId,
+        apiEndpoint: req.originalUrl,
+        requestId: req.headers['x-request-id']
+      }
     );
 
-    res.json({
-      success: true,
-      data: report
-    });
+    res.json({ success: true, data: report });
   } catch (error) {
-    console.error('Generate compliance report error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to generate compliance report'
-    });
+    res.status(error.status || 500).json({ success: false, message: error.message });
   }
 });
 
-// Apply legal hold
 router.post('/legal-hold/apply', auth, adminAuth, [
-  body('entityType').isIn(['expense', 'user', 'workspace', 'payment', 'report']),
-  body('entityId').isMongoId(),
+  body('entityType').isString().notEmpty(),
+  body('entityId').isString().notEmpty(),
   body('reason').notEmpty().isString().trim().isLength({ max: 500 })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { entityType, entityId, reason } = req.body;
-    
-    await auditComplianceService.applyLegalHold(entityType, entityId, reason, req.user.id);
-
-    res.json({
-      success: true,
-      message: 'Legal hold applied successfully'
-    });
+    await auditComplianceService.applyLegalHold(req.body.entityType, req.body.entityId, req.body.reason, getUserId(req));
+    res.json({ success: true, message: 'Legal hold applied successfully' });
   } catch (error) {
-    console.error('Apply legal hold error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to apply legal hold'
-    });
+    res.status(error.status || 500).json({ success: false, message: error.message });
   }
 });
 
-// Release legal hold
 router.post('/legal-hold/release', auth, adminAuth, [
-  body('entityType').isIn(['expense', 'user', 'workspace', 'payment', 'report']),
-  body('entityId').isMongoId()
+  body('entityType').isString().notEmpty(),
+  body('entityId').isString().notEmpty()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { entityType, entityId } = req.body;
-    
-    await auditComplianceService.releaseLegalHold(entityType, entityId, req.user.id);
-
-    res.json({
-      success: true,
-      message: 'Legal hold released successfully'
-    });
+    await auditComplianceService.releaseLegalHold(req.body.entityType, req.body.entityId, getUserId(req));
+    res.json({ success: true, message: 'Legal hold released successfully' });
   } catch (error) {
-    console.error('Release legal hold error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to release legal hold'
-    });
+    res.status(error.status || 500).json({ success: false, message: error.message });
   }
 });
 
-// Get compliance dashboard
-router.get('/compliance/dashboard', auth, adminAuth, [
-  query('workspaceId').optional().isMongoId()
-], async (req, res) => {
+router.get('/compliance/dashboard', auth, adminAuth, [query('workspaceId').optional().isMongoId()], async (req, res) => {
   try {
-    const workspaceId = req.query.workspaceId;
-    const query = workspaceId ? { workspaceId } : {};
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    await ensureWorkspaceAccess(req, req.query.workspaceId);
 
+    const workspaceQuery = req.query.workspaceId ? { workspaceId: req.query.workspaceId } : {};
     const [
       totalAuditLogs,
       openViolations,
       criticalViolations,
       recentActivity,
-      complianceByStandard
-    ] = await Promise.all([
-      ImmutableAuditLog.countDocuments(query),
-      ComplianceViolation.countDocuments({ ...query, status: 'open' }),
-      ComplianceViolation.countDocuments({ ...query, severity: 'critical' }),
-      ImmutableAuditLog.find(query).sort({ createdAt: -1 }).limit(10).populate('userId', 'name'),
-      ComplianceViolation.aggregate([
-        { $match: query },
-        { $group: { _id: '$standard', count: { $sum: 1 } } }
-      ])
-    ]);
-
-    const dashboard = {
-      summary: {
-        totalAuditLogs,
-        openViolations,
-        criticalViolations,
-        complianceScore: await this.calculateOverallComplianceScore(workspaceId)
-      },
-      recentActivity,
       complianceByStandard,
-      generatedAt: new Date()
-    };
+      complianceScore
+    ] = await Promise.all([
+      ImmutableAuditLog.countDocuments(workspaceQuery),
+      ComplianceViolation.countDocuments({ ...workspaceQuery, status: 'open' }),
+      ComplianceViolation.countDocuments({ ...workspaceQuery, severity: 'critical' }),
+      ImmutableAuditLog.find(workspaceQuery).sort({ createdAt: -1 }).limit(10).populate('userId', 'name').lean(),
+      ComplianceViolation.aggregate([
+        { $match: workspaceQuery },
+        { $group: { _id: '$standard', count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]),
+      auditComplianceService.calculateOverallComplianceScore(req.query.workspaceId || null)
+    ]);
 
     res.json({
       success: true,
-      data: dashboard
+      data: {
+        summary: { totalAuditLogs, openViolations, criticalViolations, complianceScore },
+        recentActivity,
+        complianceByStandard,
+        generatedAt: new Date()
+      }
     });
   } catch (error) {
-    console.error('Get compliance dashboard error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get compliance dashboard'
-    });
+    res.status(error.status || 500).json({ success: false, message: error.message });
   }
 });
 
-// Export audit data for external systems
 router.post('/audit-logs/export', auth, adminAuth, [
+  body('workspaceId').optional().isMongoId(),
   body('format').isIn(['json', 'csv', 'xml']),
   body('filters').optional().isObject(),
   body('dateRange.start').optional().isISO8601(),
@@ -392,64 +413,61 @@ router.post('/audit-logs/export', auth, adminAuth, [
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    await ensureWorkspaceAccess(req, req.body.workspaceId);
 
-    const { format, filters = {}, dateRange } = req.body;
-    
-    const query = { ...filters };
-    if (dateRange?.start || dateRange?.end) {
-      query.createdAt = {};
-      if (dateRange.start) query.createdAt.$gte = new Date(dateRange.start);
-      if (dateRange.end) query.createdAt.$lte = new Date(dateRange.end);
-    }
+    const { format, filters = {}, dateRange = {}, workspaceId } = req.body;
+    const q = { ...filters };
+    if (workspaceId) q.workspaceId = workspaceId;
+    const createdAt = buildDateRange(dateRange.start, dateRange.end);
+    if (createdAt) q.createdAt = createdAt;
 
-    const auditLogs = await ImmutableAuditLog.find(query)
+    const logs = await ImmutableAuditLog.find(q)
       .populate('userId', 'name email')
       .sort({ createdAt: -1 })
-      .limit(10000); // Limit for performance
+      .limit(10000)
+      .lean();
 
-    // Log the export action
     await auditComplianceService.logImmutableAudit(
-      req.user.id,
-      'data_export',
+      getUserId(req),
+      'audit_exported',
       'audit_log',
-      new Date(),
-      { after: { format, recordCount: auditLogs.length, filters } }
+      null,
+      { after: { format, recordCount: logs.length, filters } },
+      {
+        workspaceId: workspaceId || null,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        sessionId: req.sessionId,
+        apiEndpoint: req.originalUrl,
+        requestId: req.headers['x-request-id'],
+        riskLevel: 'medium'
+      }
     );
 
-    let exportData;
-    let contentType;
-    let filename;
+    let exportData = '';
+    let contentType = 'application/json';
+    let filename = `audit-logs-${Date.now()}.json`;
 
-    switch (format) {
-      case 'json':
-        exportData = JSON.stringify(auditLogs, null, 2);
-        contentType = 'application/json';
-        filename = `audit-logs-${Date.now()}.json`;
-        break;
-      case 'csv':
-        exportData = this.convertToCSV(auditLogs);
-        contentType = 'text/csv';
-        filename = `audit-logs-${Date.now()}.csv`;
-        break;
-      case 'xml':
-        exportData = this.convertToXML(auditLogs);
-        contentType = 'application/xml';
-        filename = `audit-logs-${Date.now()}.xml`;
-        break;
+    if (format === 'json') {
+      exportData = JSON.stringify(logs, null, 2);
+      contentType = 'application/json';
+      filename = `audit-logs-${Date.now()}.json`;
+    } else if (format === 'csv') {
+      exportData = auditComplianceService.convertToCSV(logs);
+      contentType = 'text/csv';
+      filename = `audit-logs-${Date.now()}.csv`;
+    } else {
+      exportData = auditComplianceService.convertToXML(logs);
+      contentType = 'application/xml';
+      filename = `audit-logs-${Date.now()}.xml`;
     }
 
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(exportData);
   } catch (error) {
-    console.error('Export audit logs error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to export audit logs'
-    });
+    res.status(error.status || 500).json({ success: false, message: error.message });
   }
 });
 

@@ -1,43 +1,46 @@
 const cron = require('node-cron');
-const cache = require('../utils/multiTierCache');
+const CacheMap = require('../models/CacheMap');
+const multiTierCache = require('../utils/multiTierCache');
+const logger = require('../utils/structuredLogger');
 
 /**
  * Cache Pruner Job
- * Issue #741: Periodically sweeps the cache tiers to remove expired entries.
- * Ensures the in-memory L1 doesn't grow unbounded.
+ * Issue #781: Background cleaning of orphaned or stale epoch fragments
  */
 class CachePruner {
+    constructor() {
+        this.isRunning = false;
+    }
+
     start() {
-        // Run every 10 minutes
-        cron.schedule('*/10 * * * *', async () => {
-            console.log('[CachePruner] Starting cache sweep...');
+        // Run every minute for fast stale cleanups (L2 sync simulation)
+        cron.schedule('*/5 * * * *', async () => {
+            if (this.isRunning) return;
+            this.isRunning = true;
 
             try {
-                const now = Date.now();
-                let prunedCount = 0;
-
-                // Prune L1 (Map)
-                for (const [key, entry] of cache.l1.entries()) {
-                    if (entry.expiry <= now) {
-                        cache.l1.delete(key);
-                        prunedCount++;
-                    }
-                }
-
-                // In a real Redis scenario, TTL is handled by Redis.
-                // For our simulated L2, we prune it here.
-                for (const key in cache.l2) {
-                    if (cache.l2[key].expiry <= now) {
-                        delete cache.l2[key];
-                        prunedCount++;
-                    }
-                }
-
-                console.log(`[CachePruner] Finished. Pruned ${prunedCount} entries.`);
+                await this.pruneStaleNodes();
             } catch (err) {
-                console.error('[CachePruner] Error during sweep:', err);
+                logger.error('[CachePruner] Run failed', { error: err.message });
+            } finally {
+                this.isRunning = false;
             }
         });
+        console.log('✓ Cache Pruner scheduled');
+    }
+
+    async pruneStaleNodes() {
+        // Remove expired tracker nodes from the DB
+        const result = await CacheMap.deleteMany({
+            expiresAt: { $lt: new Date() }
+        });
+
+        if (result.deletedCount > 0) {
+            logger.info(`[CachePruner] GC collected ${result.deletedCount} orphaned cache fragments.`);
+        }
+
+        // Let MultiTierCache self-prune its local Map when hit, 
+        // but we could also sweep it here for memory safety.
     }
 }
 

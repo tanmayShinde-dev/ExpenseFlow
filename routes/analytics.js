@@ -15,7 +15,12 @@ const CustomDashboard = require('../models/CustomDashboard');
 const FinancialHealthScore = require('../models/FinancialHealthScore');
 const ResponseFactory = require('../utils/ResponseFactory');
 const { asyncHandler } = require('../middleware/errorMiddleware');
-const {requireAuth,getUserId}=require('../middleware/clerkAuth');
+const { requireAuth, getUserId } = require('../middleware/clerkAuth');
+const cacheInterceptor = require('../middleware/cacheInterceptor');
+
+// Mount Graph-Aware Cache Interceptor for all analytics GET requests
+router.use(cacheInterceptor(300));
+
 
 // ========================
 // SUBSCRIPTION DETECTION & RUNWAY ROUTES (Issue #444)

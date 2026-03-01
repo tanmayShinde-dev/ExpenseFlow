@@ -50,8 +50,33 @@ class TransactionService {
      * Entry point for transaction creation
      */
     async createTransaction(rawData, userId, io) {
+        // Issue #780: Pre-commit compliance hook
+        if (rawData.workspace) {
+            const complianceOrchestrator = require('./complianceOrchestrator');
+            const evaluation = await complianceOrchestrator.evaluate(
+                rawData.workspace,
+                'TRANSACTION',
+                rawData,
+                { user: userId, action: 'CREATE' }
+            );
+
+            if (!evaluation.allowed && ['DENY', 'FREEZE'].includes(evaluation.action)) {
+                throw new Error(`Compliance Policy Violation: ${evaluation.reason}`);
+            }
+
+            if (evaluation.action === 'FLAG') {
+                rawData.complianceFlag = evaluation.policyId;
+            }
+        }
+
         // Stage 1: Pre-processing & Persistence
         const transaction = await this._persistTransaction(rawData, userId);
+
+        if (transaction.deferred) {
+            // Processing is handed off to JournalApplier background job
+            if (io) io.to(`user_${userId}`).emit('transaction_journaled', { id: transaction._id });
+            return transaction;
+        }
 
         // Stage 2: Asynchronous Multi-Stage Pipeline
         this._runProcessingPipeline(transaction, userId, io).catch(err => {
@@ -79,6 +104,29 @@ class TransactionService {
         };
 
         const transaction = new Transaction(finalData);
+
+        // Issue #769: Distributed Journaling Interception
+        if (finalData.workspace) {
+            const WriteJournal = require('../models/WriteJournal');
+            const journal = await WriteJournal.create({
+                entityId: transaction._id,
+                entityType: 'TRANSACTION',
+                operation: 'CREATE',
+                payload: finalData,
+                vectorClock: finalData.vectorClock || {},
+                workspaceId: finalData.workspace,
+                userId: userId,
+                status: 'PENDING'
+            });
+
+            return {
+                ...transaction.toObject(),
+                status: 'journaled',
+                journalId: journal._id,
+                deferred: true
+            };
+        }
+
         await transaction.save();
 
         // Issue #738: Record Event in Ledger
@@ -86,7 +134,8 @@ class TransactionService {
             transaction._id,
             'CREATED',
             finalData,
-            userId
+            userId,
+            finalData.workspace
         );
 
         transaction.ledgerSequence = event.sequence;

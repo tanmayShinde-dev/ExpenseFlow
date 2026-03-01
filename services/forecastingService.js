@@ -2,6 +2,8 @@ const Expense = require('../models/Expense');
 const RecurringExpense = require('../models/RecurringExpense');
 const Goal = require('../models/Goal');
 const mongoose = require('mongoose');
+const SimulationEngine = require('./simulationEngine');
+const MathSimulation = require('../utils/mathSimulation');
 
 class ForecastingService {
     constructor() {
@@ -9,6 +11,169 @@ class ForecastingService {
         this.CRITICAL_RUNWAY_DAYS = 7;
         this.WARNING_RUNWAY_DAYS = 14;
         this.COMFORTABLE_RUNWAY_DAYS = 30;
+        
+        // Monte Carlo defaults (Issue #798)
+        this.DEFAULT_SIMULATIONS = 10000;
+        this.DEFAULT_HORIZON_DAYS = 90;
+    }
+
+    /**
+     * Run Monte Carlo simulation for probabilistic runway
+     * Issue #798: Replace linear forecasting with probabilistic modeling
+     * @param {string} userId - User ID
+     * @param {Object} options - Simulation options
+     * @returns {Object} Probabilistic forecast with confidence intervals
+     */
+    async runProbabilisticForecast(userId, options = {}) {
+        const {
+            simulations = this.DEFAULT_SIMULATIONS,
+            horizonDays = this.DEFAULT_HORIZON_DAYS,
+            scenarioAdjustments = null,
+            includeStressTest = false
+        } = options;
+
+        // Run core simulation
+        const results = await SimulationEngine.runSimulation(userId, {
+            simulations,
+            horizonDays,
+            scenarioAdjustments
+        });
+
+        // Add stress test if requested
+        let stressTest = null;
+        if (includeStressTest) {
+            stressTest = await SimulationEngine.runStressTest(userId, {
+                horizonDays,
+                scenarios: ['recession', 'income_loss', 'expense_spike', 'combined_shock']
+            });
+        }
+
+        // Get deterministic runway for comparison
+        const deterministicRunway = await this.calculateRunway(userId);
+
+        return {
+            probabilistic: results,
+            deterministic: deterministicRunway,
+            stressTest,
+            comparison: this._compareForecasts(results, deterministicRunway),
+            generatedAt: new Date()
+        };
+    }
+
+    /**
+     * Compare probabilistic vs deterministic forecasts
+     * @private
+     */
+    _compareForecasts(probabilistic, deterministic) {
+        const detRunway = deterministic.runway.days;
+        const probP50 = probabilistic.confidenceIntervals?.runwayDays?.p50;
+        const probP10 = probabilistic.confidenceIntervals?.runwayDays?.p10;
+        
+        if (detRunway === null || !probP50) {
+            return { divergence: 'insufficient_data' };
+        }
+
+        const divergencePercent = detRunway !== 0 
+            ? Math.round(((probP50 - detRunway) / detRunway) * 100)
+            : 0;
+
+        return {
+            deterministicDays: detRunway,
+            probabilisticP50Days: probP50,
+            probabilisticP10Days: probP10,
+            divergencePercent,
+            recommendation: divergencePercent < -20 
+                ? 'Probabilistic model suggests higher risk than linear model. Review expense volatility.'
+                : divergencePercent > 20
+                    ? 'Linear model may be overly conservative. You have more headroom than expected.'
+                    : 'Models are aligned. Confidence in forecast is high.'
+        };
+    }
+
+    /**
+     * Get fan chart data for visualization
+     * Issue #798: Confidence interval plotting
+     * @param {string} userId - User ID
+     * @param {Object} options - Options
+     * @returns {Object} Fan chart data with percentile bands
+     */
+    async getFanChartData(userId, options = {}) {
+        const results = await SimulationEngine.runSimulation(userId, {
+            simulations: options.simulations || 5000,
+            horizonDays: options.horizonDays || 30
+        });
+
+        return {
+            fanChart: results.fanChart,
+            confidenceIntervals: results.confidenceIntervals,
+            metadata: {
+                simulations: results.metadata?.simulations || 5000,
+                horizonDays: options.horizonDays || 30,
+                generatedAt: new Date()
+            }
+        };
+    }
+
+    /**
+     * Get runway histogram distribution
+     * @param {string} userId - User ID
+     * @returns {Object} Histogram data for runway distribution
+     */
+    async getRunwayHistogram(userId) {
+        const results = await SimulationEngine.runSimulation(userId, {
+            simulations: 10000,
+            horizonDays: 90
+        });
+
+        if (!results.rawRunwayDays || results.rawRunwayDays.length === 0) {
+            return { histogram: [], message: 'Insufficient data for histogram' };
+        }
+
+        const histogram = MathSimulation.histogram(results.rawRunwayDays, 20);
+        const stats = {
+            mean: MathSimulation.mean(results.rawRunwayDays),
+            stdDev: MathSimulation.stdDev(results.rawRunwayDays),
+            p10: results.confidenceIntervals?.runwayDays?.p10,
+            p50: results.confidenceIntervals?.runwayDays?.p50,
+            p90: results.confidenceIntervals?.runwayDays?.p90
+        };
+
+        return {
+            histogram,
+            stats,
+            interpretation: this._interpretRunwayDistribution(stats)
+        };
+    }
+
+    /**
+     * Interpret runway distribution for user-friendly insights
+     * @private
+     */
+    _interpretRunwayDistribution(stats) {
+        const insights = [];
+        
+        if (stats.p10 < 14) {
+            insights.push({
+                type: 'warning',
+                message: `There's a 10% chance your runway could fall below ${Math.round(stats.p10)} days.`
+            });
+        }
+
+        if (stats.stdDev > stats.mean * 0.3) {
+            insights.push({
+                type: 'info',
+                message: 'Your cash flow has high volatility. Consider building a larger safety buffer.'
+            });
+        }
+
+        if (stats.p90 - stats.p10 > 30) {
+            insights.push({
+                type: 'info',
+                message: `Wide uncertainty range (${Math.round(stats.p10)}-${Math.round(stats.p90)} days). Monitor expenses closely.`
+            });
+        }
+
+        return insights;
     }
 
     /**
