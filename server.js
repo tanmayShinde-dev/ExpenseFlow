@@ -41,9 +41,13 @@ const attackGraphRoutes = require('./routes/attackGraph'); // Issue #848: Cross-
 const incidentPlaybookRoutes = require('./routes/incidentPlaybooks'); // Issue #851: Autonomous Incident Response Playbooks
 const sessionTrustScoringRoutes = require('./routes/sessionTrustScoring'); // Issue #852: Continuous Session Trust Re-Scoring
 const mlAnomalyRoutes = require('./routes/mlAnomaly'); // Issue #878: Behavioral ML Anomaly Detection
+const crossSessionCorrelationRoutes = require('./routes/crossSessionCorrelation'); // Issue #879: Cross-Session Threat Correlation
 const realtimeCollaborationService = require('./services/realtimeCollaborationService');
 const attackGraphIntegrationService = require('./services/attackGraphIntegrationService'); // Issue #848
 const mlAnomalyDetectionService = require('./services/mlAnomalyDetectionService'); // Issue #878
+const crossSessionThreatCorrelationService = require('./services/crossSessionThreatCorrelationService'); // Issue #879
+const containmentActionSystem = require('./services/containmentActionSystem'); // Issue #879
+const trustedRelationshipsManager = require('./services/trustedRelationshipsManager'); // Issue #879
 const { transportSecuritySuite } = require('./middleware/transportSecurity');
 const cron = require('node-cron');
 
@@ -182,6 +186,34 @@ mongoose.connect(process.env.MONGODB_URI)
       .catch(err => {
         console.error('ML anomaly detection initialization error:', err);
         console.log('⚠ ML system will train on first use');
+      });
+    
+    // Initialize cross-session threat correlation system
+    // Issue #879: Cross-Session Threat Correlation
+    crossSessionThreatCorrelationService.initialize()
+      .then(() => {
+        console.log('✓ Cross-session threat correlation initialized');
+      })
+      .catch(err => {
+        console.error('Cross-session correlation initialization error:', err);
+      });
+    
+    // Initialize containment action system
+    containmentActionSystem.initialize()
+      .then(() => {
+        console.log('✓ Containment action system initialized');
+      })
+      .catch(err => {
+        console.error('Containment action system initialization error:', err);
+      });
+    
+    // Initialize trusted relationships manager
+    trustedRelationshipsManager.initialize()
+      .then(() => {
+        console.log('✓ Trusted relationships manager initialized');
+      })
+      .catch(err => {
+        console.error('Trusted relationships manager initialization error:', err);
       });
   })
   .catch(err => console.error('MongoDB connection error:', err));
@@ -361,6 +393,7 @@ redisSub.on('message', (channel, message) => {
   }
 });
 
+app.use('/api/correlation', crossSessionCorrelationRoutes); // Issue #879: Cross-Session Threat Correlation
 // Routes
 app.use('/api', apiGateway.middleware());
 app.use('/api/auth', require('./middleware/rateLimiter').authLimiter, authRoutes);
