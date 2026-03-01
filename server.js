@@ -19,6 +19,7 @@ const CronJobs = require('./services/cronJobs');
 const { generalLimiter } = require('./middleware/rateLimiter');
 const { sanitizeInput, sanitizationMiddleware, validateDataTypes } = require('./middleware/sanitizer');
 const securityMonitor = require('./services/securityMonitor');
+const apiGateway = require('./middleware/apiGateway');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -32,6 +33,7 @@ const twoFactorAuthRoutes = require('./routes/twoFactorAuth');
 const encryptionRoutes = require('./routes/encryption');
 const automatedForecastingRoutes = require('./routes/automatedForecasting');
 const auditComplianceRoutes = require('./routes/auditCompliance');
+const apiGatewayRoutes = require('./routes/apiGateway');
 const { transportSecuritySuite } = require('./middleware/transportSecurity');
 const cron = require('node-cron');
 
@@ -225,6 +227,7 @@ redisSub.on('message', (channel, message) => {
 });
 
 // Routes
+app.use('/api', apiGateway.middleware());
 app.use('/api/auth', require('./middleware/rateLimiter').authLimiter, authRoutes);
 app.use('/api/expenses', require('./middleware/rateLimiter').expenseLimiter, expenseRoutes);
 app.use('/api/sync', syncRoutes);
@@ -244,6 +247,7 @@ app.use('/api/2fa', require('./middleware/auth'), twoFactorAuthRoutes); // Issue
 app.use('/api/encryption', encryptionRoutes); // Issue #827: End-to-End Encryption
 app.use('/api/forecasting-ai', automatedForecastingRoutes); // Issue #828: Automated Financial Forecasting & AI Insights
 app.use('/api/audit-compliance', auditComplianceRoutes); // Issue #829: Audit Trail & Forensic Investigation Platform
+app.use('/api/gateway', apiGatewayRoutes);
 
 // Express error handler middleware (must be after all routes)
 app.use((err, req, res, next) => {
