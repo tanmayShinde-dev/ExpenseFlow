@@ -34,10 +34,45 @@ const attackGraphIntegrationService = require('./services/attackGraphIntegration
 const { transportSecuritySuite } = require('./middleware/transportSecurity');
 const cron = require('node-cron');
 
-// Distributed real-time sync dependencies
-const Redis = require('ioredis');
-const redisPub = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
-const redisSub = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+// Distributed real-time sync dependencies (Safe Initialization)
+let redisPub = null;
+let redisSub = null;
+
+const REDIS_ENABLED = !!process.env.REDIS_URL;
+
+if (REDIS_ENABLED) {
+  try {
+    const Redis = require('ioredis');
+
+    redisPub = new Redis(process.env.REDIS_URL, {
+      maxRetriesPerRequest: 3,
+      retryStrategy: (times) => {
+        if (times > 3) return null;
+        return Math.min(times * 200, 1000);
+      }
+    });
+
+    redisSub = new Redis(process.env.REDIS_URL, {
+      maxRetriesPerRequest: 3
+    });
+
+    redisPub.on('error', (err) => {
+      console.warn('[Redis Publisher Error]:', err.message);
+    });
+
+    redisSub.on('error', (err) => {
+      console.warn('[Redis Subscriber Error]:', err.message);
+    });
+
+    console.log('✅ Redis initialized');
+  } catch (err) {
+    console.warn('⚠ Redis initialization failed. Running without Redis.');
+    redisPub = null;
+    redisSub = null;
+  }
+} else {
+  console.log('⚠ REDIS_URL not set. Running without Redis.');
+}
 
 // Redis pub/sub channel for distributed sync
 const SYNC_CHANNEL = 'expenseflow:sync';
@@ -47,6 +82,14 @@ const SERVER_INSTANCE_ID = process.env.SERVER_INSTANCE_ID || crypto.randomUUID()
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
+
+const { Server } = require('socket.io');
+const io = new Server(server, {
+  cors: {
+    origin: true,
+    credentials: true
+  }
+});
 
 // Initialize Asynchronous Listeners (Issue #711)
 require('./listeners/EmailListeners').init();
@@ -133,7 +176,6 @@ async function connectDatabase() {
 
     console.log('✅ MongoDB connected');
 
-    // Cron jobs only in development
     if (process.env.NODE_ENV !== 'production') {
       try {
         const CronJobs = require('./jobs/cronJobs');
@@ -158,39 +200,28 @@ async function connectDatabase() {
         require('./jobs/cachePruner').start();
         require('./jobs/velocityCalculator').start();
         require('./jobs/keyRotator').start();
-        require('./jobs/neuralReindexer').start(); // Issue #796: Semantic search re-indexer
-        require('./jobs/privacyAuditTrail').start(); // Issue #844: ZK privacy audit trail
-        require('./jobs/taxYearEndRetainer').start(); // Issue #843: Autonomous tax optimization
-        require('./jobs/shardCompactor').start(); // Issue #842: Shard archival cycle
+        require('./jobs/neuralReindexer').start();
 
-
-
-        // Start resilient orchestrator
         require('./services/jobOrchestrator').start();
 
-
-
         console.log('✓ Cron jobs initialized');
+
       } catch (err) {
         console.log('Cron jobs skipped:', err.message);
       }
     }
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => {
-    console.log('MongoDB connected');
-    // Initialize cron jobs after DB connection (includes backup scheduling)
-    // Issue #462: Automated Backup System for Financial Data
-    CronJobs.init();
-    console.log('✓ Cron jobs initialized (includes backup scheduling)');
-    
-    // Initialize attack graph detection system
-    // Issue #848: Cross-Account Attack Graph Detection
     attackGraphIntegrationService.initialize();
     console.log('✓ Attack graph detection initialized');
-  })
-  .catch(err => console.error('MongoDB connection error:', err));
+
+  } catch (error) {
+    console.error('Database connection failed:', error.message);
+  }
+}
+
+connectDatabase();
+
+
 
 // Socket.IO authentication
 io.use(socketAuth);
@@ -229,17 +260,23 @@ io.on('connection', (socket) => {
   // Listen for client expense changes and broadcast to Redis
   socket.on('expense_created', (expense) => {
     io.emit('expense_created', expense);
+    if (redisPub) {
     redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_created', expense }));
+    }
   });
 
   socket.on('expense_updated', (expense) => {
     io.emit('expense_updated', expense);
+    if (redisPub) {
     redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_updated', expense }));
+    }
   });
 
   socket.on('expense_deleted', (data) => {
     io.emit('expense_deleted', data);
+    if (redisPub) {
     redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_deleted', data }));
+    }
   });
 
   socket.on('collab:join', async (payload = {}) => {
@@ -337,6 +374,7 @@ io.on('connection', (socket) => {
 });
 
 // Listen for Redis sync events and broadcast to local clients
+if (redisSub) {
 redisSub.subscribe(SYNC_CHANNEL, (err) => {
   if (err) console.error('Redis subscribe error:', err);
 });
@@ -374,6 +412,7 @@ redisSub.on('message', (channel, message) => {
     console.error('Redis sync event error:', e);
   }
 });
+}
 
 // Routes
 app.use('/api', apiGateway.middleware());
