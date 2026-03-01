@@ -104,6 +104,7 @@ app.use(require('./middleware/validationInterceptor'));
 app.use(require('./middleware/auditInterceptor'));
 app.use(require('./middleware/auditTraceability'));
 app.use(require('./middleware/taxDeductionInterceptor')); // Issue #843
+app.use(require('./middleware/shardResolver')); // Issue #842: Distributed Ledger Fabric
 app.use(require('./middleware/tenantResolver'));
 // Inject Circuit Breaker protection early in the pipeline
 // We pass 'TRANSACTION' as a default, though specific routers might override it
@@ -159,6 +160,7 @@ async function connectDatabase() {
         require('./jobs/neuralReindexer').start(); // Issue #796: Semantic search re-indexer
         require('./jobs/privacyAuditTrail').start(); // Issue #844: ZK privacy audit trail
         require('./jobs/taxYearEndRetainer').start(); // Issue #843: Autonomous tax optimization
+        require('./jobs/shardCompactor').start(); // Issue #842: Shard archival cycle
 
 
 
