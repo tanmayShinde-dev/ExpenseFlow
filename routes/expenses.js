@@ -12,6 +12,7 @@ const { ExpenseSchemas, validateRequest, validateQuery } = require('../middlewar
 const { expenseLimiter, exportLimiter } = require('../middleware/rateLimiter');
 const { requireAuth, getUserId } = require('../middleware/clerkAuth');
 const integrityGuard = require('../middleware/integrityGuard');
+const asyncHandler = require('express-async-handler');
 
 
 
@@ -88,7 +89,7 @@ router.get('/:id', requireAuth, asyncHandler(async (req, res) => {
   const expense = await expenseRepository.findById(req.params.id);
 
   if (!expense || (expense.user.toString() !== req.user._id.toString() && !expense.workspace)) {
-    throw new NotFoundError('Expense not found');
+    throw new AppError('Expense not found', 404);
   }
 
   return ResponseFactory.success(res, expense);
@@ -105,7 +106,7 @@ router.put('/:id', requireAuth, integrityGuard, validateRequest(ExpenseSchemas.c
     req.body
   );
 
-  if (!expense) throw new NotFoundError('Expense not found');
+  if (!expense) throw new AppError('Expense not found', 404);
 
   // Issue #553: Trigger adaptive learning on manual correction
   if (req.body.category && expense.merchant) {
@@ -132,7 +133,7 @@ router.patch('/bulk-update', requireAuth, validateRequest(ExpenseSchemas.bulkUpd
   );
 
   if (result.matchedCount === 0) {
-    throw new NotFoundError('No expenses found to update');
+    throw new AppError('Expense not found to update', 404);
   }
 
   // Emit real-time event
@@ -161,7 +162,7 @@ router.post('/bulk-delete', requireAuth, validateRequest(ExpenseSchemas.bulkDele
   });
 
   if (result.deletedCount === 0) {
-    throw new NotFoundError('No expenses found to delete');
+    throw new AppError('Expense not found to delete', 404);
   }
 
   // Emit real-time event
@@ -182,7 +183,7 @@ router.post('/bulk-delete', requireAuth, validateRequest(ExpenseSchemas.bulkDele
 router.delete('/:id', requireAuth, integrityGuard, asyncHandler(async (req, res) => {
   const expense = await expenseRepository.deleteOne({ _id: req.params.id, user: req.user._id });
 
-  if (!expense) throw new NotFoundError('Expense not found');
+  if (!expense) throw new AppError('Expense not found', 404);
 
   // Real-time notification for single delete (adding since it might be missing or useful)
   const io = req.app.get('io');

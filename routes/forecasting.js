@@ -2,12 +2,11 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const forecastingEngine = require('../services/forecastingEngine');
-const ForecastingService = require('../services/forecastingService');
+const forecastingService = require('../services/forecastingService');
 const ForecastScenario = require('../models/ForecastScenario');
 const SimulationEngine = require('../services/simulationEngine');
 const runwayAlertGuard = require('../middleware/runwayAlertGuard');
 
-const forecastingService = new ForecastingService();
 
 /**
  * @route   POST /api/forecasting/run

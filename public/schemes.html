@@ -657,10 +657,35 @@ body.dark-mode .navbar {
   background: #111827;
 }
 
-/* Footer */
-body.dark-mode .footer {
-  background: #111827;
-  color: #cbd5e1;
+.footer-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 40px;
+}
+
+.footer-section h4 {
+  margin-bottom: 15px;
+  color: #64ffda;
+}
+
+.footer-links {
+  list-style: none;
+  padding: 0;
+}
+
+.footer-links li {
+  margin-bottom: 10px;
+}
+
+.footer-links a {
+  text-decoration: none;
+  color: #ccc;
+  transition: 0.3s ease;
+}
+
+.footer-links a:hover {
+  color: #64ffda;
+  padding-left: 5px;
 }
 
 /* Status colors (slightly adjusted for dark) */
@@ -694,7 +719,7 @@ body.dark-mode .status.closed {
 
       <div class="nav-menu">
         <a href="index.html" class="nav-link">Dashboard</a>
-        <a href="#l" class="nav-link">Analytics</a>
+        <a href="analytics.html" class="nav-link">Analytics</a>
         <a href="finance-tips.html" class="nav-link">Finance Tips</a>
         <a href="government-schemes.html" class="nav-link active">Govt Schemes</a>
         
@@ -925,10 +950,11 @@ body.dark-mode .status.closed {
   </div>
 </main>
 
-
 <!-- FOOTER -->
 <footer class="footer">
   <div class="footer-container">
+
+    <!-- Logo Section -->
     <div class="footer-section">
       <div class="footer-logo">
         <i class="fas fa-wallet"></i>
@@ -937,14 +963,36 @@ body.dark-mode .status.closed {
       <p>Smart money management made simple.</p>
     </div>
 
+    <!-- Resources -->
     <div class="footer-section">
-      <h4>Resources</h4>
+      
       <ul class="footer-links">
         <li><a href="finance-tips.html">Finance Tips</a></li>
-        <li><a href="government-schemes.html">Government Schemes</a></li>
-        <li><a href="PrivacyPolicy.html">Privacy Policy</a></li>
+        <li><a href="schemes.html">Government Schemes</a></li>
+        <li><a href="blog.html">Blog</a></li>
+        
       </ul>
     </div>
+
+    <!-- Company -->
+    <div class="footer-section">
+      
+      <ul class="footer-links">
+        <li><a href="AboutUs.html">About Us</a></li>
+        <li><a href="contact.html">Contact</a></li>
+        <li><a href="faq.html">FAQs</a></li>
+      </ul>
+    </div>
+
+    <!-- Legal -->
+    <div class="footer-section">
+      <ul class="footer-links">
+        <li><a href="PrivacyPolicy.html">Privacy Policy</a></li>
+        <li><a href="terms_service.html">Terms & Conditions</a></li>
+        <li><a href="ai-advisor.html">Assistant</a></li>
+      </ul>
+    </div>
+
   </div>
 
   <div class="footer-bottom">
