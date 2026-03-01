@@ -25,6 +25,7 @@ const automatedForecastingRoutes = require('./routes/automatedForecasting');
 const auditComplianceRoutes = require('./routes/auditCompliance');
 const apiGatewayRoutes = require('./routes/apiGateway');
 const realtimeCollaborationRoutes = require('./routes/realtimeCollaboration');
+const adaptiveRiskEngineRoutes = require('./routes/adaptiveRiskEngine');
 const realtimeCollaborationService = require('./services/realtimeCollaborationService');
 const { transportSecuritySuite } = require('./middleware/transportSecurity');
 const cron = require('node-cron');
@@ -342,6 +343,7 @@ app.use('/api/forecasting-ai', automatedForecastingRoutes); // Issue #828: Autom
 app.use('/api/audit-compliance', auditComplianceRoutes); // Issue #829: Audit Trail & Forensic Investigation Platform
 app.use('/api/gateway', apiGatewayRoutes);
 app.use('/api/realtime-collab', realtimeCollaborationRoutes);
+app.use('/api/risk-engine', adaptiveRiskEngineRoutes);
 
 // Express error handler middleware (must be after all routes)
 app.use((err, req, res, next) => {

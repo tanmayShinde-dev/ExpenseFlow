@@ -1,0 +1,64 @@
+{
+  "policyName": "adaptive-risk-engine-v2",
+  "modelVersion": "ensemble-v2.0.0",
+  "thresholds": {
+    "suspicious": 65,
+    "challenge": 82,
+    "block": 95
+  },
+  "ensembleWeights": {
+    "ruleEngine": 0.58,
+    "mlEnsemble": 0.42
+  },
+  "ruleWeights": {
+    "NEW_DEVICE": 18,
+    "SUSPICIOUS_DEVICE": 22,
+    "BLOCKED_DEVICE": 42,
+    "GEOGRAPHIC_ANOMALY": 20,
+    "IMPOSSIBLE_TRAVEL": 28,
+    "VELOCITY_ANOMALY": 16,
+    "MULTIPLE_FAILED_ATTEMPTS": 14,
+    "NEW_NETWORK": 6
+  },
+  "mlModels": {
+    "behavioral": {
+      "weight": 0.45,
+      "bias": -1.05,
+      "coefficients": {
+        "newDevice": 1.2,
+        "geoAnomaly": 0.9,
+        "failedAttemptsRatio": 1.1,
+        "velocityAnomaly": 0.85,
+        "deviceTrustRisk": 0.9
+      }
+    },
+    "velocity": {
+      "weight": 0.35,
+      "bias": -1.2,
+      "coefficients": {
+        "velocityAnomaly": 1.4,
+        "failedAttemptsRatio": 1.3,
+        "newNetwork": 0.5
+      }
+    },
+    "geo": {
+      "weight": 0.2,
+      "bias": -1.15,
+      "coefficients": {
+        "geoAnomaly": 1.15,
+        "impossibleTravel": 1.35,
+        "newDevice": 0.35
+      }
+    }
+  },
+  "calibration": {
+    "slope": 6.2,
+    "intercept": -3.1
+  },
+  "drift": {
+    "alertThreshold": 0.27,
+    "watchThreshold": 0.18,
+    "windowSize": 500,
+    "ewmaAlpha": 0.08
+  }
+}
