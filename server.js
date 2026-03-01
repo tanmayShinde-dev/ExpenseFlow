@@ -13,6 +13,8 @@ const groupsRoutes = require('./routes/groups');
 const backupRoutes = require('./routes/backups');
 const backupService = require('./services/backupService');
 const twoFactorAuthRoutes = require('./routes/twoFactorAuth');
+const encryptionRoutes = require('./routes/encryption');
+const { transportSecuritySuite } = require('./middleware/transportSecurity');
 const cron = require('node-cron');
 
 // Distributed real-time sync dependencies
@@ -34,6 +36,17 @@ require('./listeners/AuditListeners').init();
 /* ================================
    SECURITY
 ================================ */
+
+// Security middleware
+// Transport Security (HTTPS, HSTS, Security Headers)
+// Issue #827: End-to-End Encryption for Sensitive Data
+app.use(transportSecuritySuite({
+  enforceHTTPS: process.env.NODE_ENV === 'production',
+  enforceHSTS: process.env.NODE_ENV === 'production',
+  securityHeaders: true,
+  enforceTLS: process.env.NODE_ENV === 'production',
+  validateCipher: process.env.NODE_ENV === 'production'
+}));
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -198,40 +211,21 @@ app.use('/api/currency', require('./routes/currency'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/splits', require('./routes/splits'));
 app.use('/api/workspaces', require('./routes/workspaces'));
-app.use('/api/analytics', require('./routes/analytics'));
-app.use('/api/export', require('./routes/export'));
-app.use('/api/forecasting', require('./routes/forecasting'));
-app.use('/api/governance', require('./routes/governance'));
-app.use('/api/taxonomy', require('./routes/taxonomy'));
-app.use('/api/sync', require('./routes/sync'));
-app.use('/api/admin', require('./routes/admin'));
-app.use('/api/ledger', require('./routes/ledger'));
-app.use('/api/treasury', require('./routes/treasury'));
-app.use('/api/search', require('./routes/search'));
-app.use('/api/conflicts', require('./routes/conflicts'));
-app.use('/api/forensics', require('./routes/forensics'));
+app.use('/api/tax', require('./routes/tax'));
+app.use('/api/backups', backupRoutes); // Issue #462: Backup Management API
+app.use('/api/accounts', require('./routes/accounts'));
+app.use('/api/2fa', require('./middleware/auth'), twoFactorAuthRoutes); // Issue #503: 2FA Management
+app.use('/api/encryption', encryptionRoutes); // Issue #827: End-to-End Encryption
 
-app.use('/api/telemetry', require('./routes/telemetry'));
-app.use('/api/vault', require('./routes/vault'));
-app.use('/api/jobs', require('./routes/jobs'));
-
-
-
-
-
-
-/* ================================
-   STATIC FILES (ONLY DEV)
-================================ */
-
-if (process.env.NODE_ENV !== 'production') {
-  const path = require('path');
-  app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-}
-
-/* ================================
-   HEALTH CHECK
-================================ */
+// Express error handler middleware (must be after all routes)
+app.use((err, req, res, next) => {
+  console.error('Express route error:', err);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal Server Error',
+    error: process.env.NODE_ENV === 'production' ? undefined : err.stack
+  });
+});
 
 app.get('/', (req, res) => {
   res.json({ status: 'Server running 🚀' });
