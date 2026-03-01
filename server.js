@@ -37,7 +37,9 @@ const auditComplianceRoutes = require('./routes/auditCompliance');
 const apiGatewayRoutes = require('./routes/apiGateway');
 const realtimeCollaborationRoutes = require('./routes/realtimeCollaboration');
 const adaptiveRiskEngineRoutes = require('./routes/adaptiveRiskEngine');
+const attackGraphRoutes = require('./routes/attackGraph'); // Issue #848: Cross-Account Attack Graph Detection
 const realtimeCollaborationService = require('./services/realtimeCollaborationService');
+const attackGraphIntegrationService = require('./services/attackGraphIntegrationService'); // Issue #848
 const { transportSecuritySuite } = require('./middleware/transportSecurity');
 const cron = require('node-cron');
 
@@ -161,6 +163,11 @@ mongoose.connect(process.env.MONGODB_URI)
     // Issue #462: Automated Backup System for Financial Data
     CronJobs.init();
     console.log('✓ Cron jobs initialized (includes backup scheduling)');
+    
+    // Initialize attack graph detection system
+    // Issue #848: Cross-Account Attack Graph Detection
+    attackGraphIntegrationService.initialize();
+    console.log('✓ Attack graph detection initialized');
   })
   .catch(err => console.error('MongoDB connection error:', err));
 
@@ -363,6 +370,7 @@ app.use('/api/audit-compliance', auditComplianceRoutes); // Issue #829: Audit Tr
 app.use('/api/gateway', apiGatewayRoutes);
 app.use('/api/realtime-collab', realtimeCollaborationRoutes);
 app.use('/api/risk-engine', adaptiveRiskEngineRoutes);
+app.use('/api/attack-graph', attackGraphRoutes); // Issue #848: Cross-Account Attack Graph Detection
 
 // Express error handler middleware (must be after all routes)
 app.use((err, req, res, next) => {
