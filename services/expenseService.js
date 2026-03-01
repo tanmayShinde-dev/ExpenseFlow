@@ -145,9 +145,21 @@ class ExpenseService {
                     { amount: finalData.amount, expenseId: expense._id },
                     userId,
                     finalData.workspace,
-                    event._id,
                     'TREASURY_NODE'
                 );
+
+                // Issue #843: Autonomous Tax Optimization Hook
+                if (finalData.taxMetadata && finalData.taxMetadata.isDeductible) {
+                    await ledgerService.recordEvent(
+                        expense._id,
+                        'TAX_DEDUCTION_ESTIMATED',
+                        finalData.taxMetadata,
+                        userId,
+                        finalData.workspace,
+                        event._id,
+                        'TAX_OPTIMIZATION_NODE'
+                    );
+                }
             }
         }
 

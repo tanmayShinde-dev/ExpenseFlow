@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const socketIo = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const helmet = require('helmet');
 const socketAuth = require('./middleware/socketAuth');
 const CronJobs = require('./services/cronJobs');
 const { generalLimiter } = require('./middleware/rateLimiter');
@@ -44,6 +45,7 @@ const SERVER_INSTANCE_ID = process.env.SERVER_INSTANCE_ID || crypto.randomUUID()
 
 const app = express();
 const server = http.createServer(app);
+const io = socketIo(server);
 
 // Initialize Asynchronous Listeners (Issue #711)
 require('./listeners/EmailListeners').init();
@@ -101,6 +103,7 @@ app.use(require('./middleware/encryptionInterceptor'));
 app.use(require('./middleware/validationInterceptor'));
 app.use(require('./middleware/auditInterceptor'));
 app.use(require('./middleware/auditTraceability'));
+app.use(require('./middleware/taxDeductionInterceptor')); // Issue #843
 app.use(require('./middleware/tenantResolver'));
 // Inject Circuit Breaker protection early in the pipeline
 // We pass 'TRANSACTION' as a default, though specific routers might override it
@@ -155,6 +158,7 @@ async function connectDatabase() {
         require('./jobs/keyRotator').start();
         require('./jobs/neuralReindexer').start(); // Issue #796: Semantic search re-indexer
         require('./jobs/privacyAuditTrail').start(); // Issue #844: ZK privacy audit trail
+        require('./jobs/taxYearEndRetainer').start(); // Issue #843: Autonomous tax optimization
 
 
 
@@ -211,114 +215,122 @@ io.on('connection', (socket) => {
     }
   });
 
-// Listen for client expense changes and broadcast to Redis
-socket.on('expense_created', (expense) => {
-  io.emit('expense_created', expense);
-  redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_created', expense }));
-});
+// Initialize Database
+connectDatabase();
 
-socket.on('expense_updated', (expense) => {
-  io.emit('expense_updated', expense);
-  redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_updated', expense }));
-});
+io.use(socketAuth);
 
-socket.on('expense_deleted', (data) => {
-  io.emit('expense_deleted', data);
-  redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_deleted', data }));
-});
+io.on('connection', (socket) => {
+  console.log(`User ${socket.user.name} connected to instance ${SERVER_INSTANCE_ID}`);
 
-socket.on('collab:join', async (payload = {}) => {
-  try {
-    const { documentId } = payload;
-    if (!documentId) {
-      socket.emit('collab:error', { error: 'documentId is required' });
-      return;
+  // Listen for client expense changes and broadcast to Redis
+  socket.on('expense_created', (expense) => {
+    io.emit('expense_created', expense);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_created', expense }));
+  });
+
+  socket.on('expense_updated', (expense) => {
+    io.emit('expense_updated', expense);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_updated', expense }));
+  });
+
+  socket.on('expense_deleted', (data) => {
+    io.emit('expense_deleted', data);
+    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_deleted', data }));
+  });
+
+  socket.on('collab:join', async (payload = {}) => {
+    try {
+      const { documentId } = payload;
+      if (!documentId) {
+        socket.emit('collab:error', { error: 'documentId is required' });
+        return;
+      }
+
+      const snapshot = await realtimeCollaborationService.getDocument(documentId, socket.userId);
+      socket.join(`collab_doc_${documentId}`);
+      socket.emit('collab:snapshot', {
+        documentId,
+        snapshot
+      });
+
+      await realtimeCollaborationService.markPresence(documentId, socket.userId, true);
+
+      io.to(`collab_doc_${documentId}`).emit('collab:presence', {
+        documentId,
+        userId: socket.userId,
+        status: 'online',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      socket.emit('collab:error', { error: error.message });
     }
+  });
 
-    const snapshot = await realtimeCollaborationService.getDocument(documentId, socket.userId);
-    socket.join(`collab_doc_${documentId}`);
-    socket.emit('collab:snapshot', {
-      documentId,
-      snapshot
-    });
+  socket.on('collab:operations', async (payload = {}) => {
+    try {
+      const { documentId, operations = [], deviceId } = payload;
+      if (!documentId) {
+        socket.emit('collab:error', { error: 'documentId is required' });
+        return;
+      }
 
-    await realtimeCollaborationService.markPresence(documentId, socket.userId, true);
+      const result = await realtimeCollaborationService.applyOperations(
+        documentId,
+        socket.userId,
+        deviceId,
+        Array.isArray(operations) ? operations : []
+      );
 
-    io.to(`collab_doc_${documentId}`).emit('collab:presence', {
-      documentId,
-      userId: socket.userId,
-      status: 'online',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    socket.emit('collab:error', { error: error.message });
-  }
-});
+      socket.emit('collab:ack', {
+        documentId,
+        version: result.version,
+        appliedResults: result.appliedResults
+      });
 
-socket.on('collab:operations', async (payload = {}) => {
-  try {
-    const { documentId, operations = [], deviceId } = payload;
-    if (!documentId) {
-      socket.emit('collab:error', { error: 'documentId is required' });
-      return;
+      const eventPayload = {
+        serverInstanceId: SERVER_INSTANCE_ID,
+        sourceSocketId: socket.id,
+        sourceUserId: socket.userId,
+        documentId,
+        version: result.version,
+        operations: result.serverOperations,
+        text: result.text,
+        registers: result.registers,
+        cells: result.cells,
+        timestamp: new Date().toISOString()
+      };
+
+      socket.to(`collab_doc_${documentId}`).emit('collab:operations', eventPayload);
+      redisPub.publish(COLLAB_CHANNEL, JSON.stringify(eventPayload));
+    } catch (error) {
+      socket.emit('collab:error', { error: error.message });
     }
+  });
 
-    const result = await realtimeCollaborationService.applyOperations(
-      documentId,
-      socket.userId,
-      deviceId,
-      Array.isArray(operations) ? operations : []
-    );
+  socket.on('collab:leave', async (payload = {}) => {
+    try {
+      const { documentId } = payload;
+      if (!documentId) {
+        return;
+      }
 
-    socket.emit('collab:ack', {
-      documentId,
-      version: result.version,
-      appliedResults: result.appliedResults
-    });
-
-    const eventPayload = {
-      serverInstanceId: SERVER_INSTANCE_ID,
-      sourceSocketId: socket.id,
-      sourceUserId: socket.userId,
-      documentId,
-      version: result.version,
-      operations: result.serverOperations,
-      text: result.text,
-      registers: result.registers,
-      cells: result.cells,
-      timestamp: new Date().toISOString()
-    };
-
-    socket.to(`collab_doc_${documentId}`).emit('collab:operations', eventPayload);
-    redisPub.publish(COLLAB_CHANNEL, JSON.stringify(eventPayload));
-  } catch (error) {
-    socket.emit('collab:error', { error: error.message });
-  }
-});
-
-socket.on('collab:leave', async (payload = {}) => {
-  try {
-    const { documentId } = payload;
-    if (!documentId) {
-      return;
+      socket.leave(`collab_doc_${documentId}`);
+      await realtimeCollaborationService.markPresence(documentId, socket.userId, false);
+      io.to(`collab_doc_${documentId}`).emit('collab:presence', {
+        documentId,
+        userId: socket.userId,
+        status: 'offline',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      socket.emit('collab:error', { error: error.message });
     }
+  });
 
-    socket.leave(`collab_doc_${documentId}`);
-    await realtimeCollaborationService.markPresence(documentId, socket.userId, false);
-    io.to(`collab_doc_${documentId}`).emit('collab:presence', {
-      documentId,
-      userId: socket.userId,
-      status: 'offline',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    socket.emit('collab:error', { error: error.message });
-  }
-});
-
-socket.on('disconnect', () => {
-  console.log(`User ${socket.user.name} disconnected`);
-});
+  socket.on('disconnect', () => {
+    console.log(`User ${socket.user.name} disconnected`);
+  });
 });
 
 // Listen for Redis sync events and broadcast to local clients

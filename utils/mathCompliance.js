@@ -33,6 +33,16 @@ class MathCompliance {
         const zScore = Math.abs((value - mean) / stdDev);
         return zScore > thresholdMultiplier;
     }
+
+    /**
+     * Calculate individual Z-Score for audit flagging.
+     */
+    static calculateZScore(value, historicalData) {
+        if (historicalData.length < 2) return 0;
+        const mean = historicalData.reduce((a, b) => a + b) / historicalData.length;
+        const stdDev = this.calculateStdDev(historicalData);
+        return stdDev === 0 ? 0 : (value - mean) / stdDev;
+    }
 }
 
 module.exports = MathCompliance;

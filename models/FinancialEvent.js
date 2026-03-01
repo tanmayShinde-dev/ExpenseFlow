@@ -13,7 +13,7 @@ const financialEventSchema = new mongoose.Schema({
     },
     entityType: {
         type: String,
-        enum: ['TRANSACTION', 'BUDGET', 'WORKSPACE', 'TREASURY_NODE'],
+        enum: ['TRANSACTION', 'BUDGET', 'WORKSPACE', 'TREASURY_NODE', 'TAX_OPTIMIZATION_NODE', 'PRIVACY_BRIDGE'],
         default: 'TRANSACTION'
     },
     eventType: {
@@ -28,7 +28,9 @@ const financialEventSchema = new mongoose.Schema({
             'FROZEN',
             'VIRTUAL_TRANSFER',
             'FUNDS_RESERVED',
-            'FUNDS_RELEASED'
+            'FUNDS_RELEASED',
+            'TAX_DEDUCTION_ESTIMATED',
+            'PRIVACY_AGGREGATE'
         ]
     },
     payload: {
