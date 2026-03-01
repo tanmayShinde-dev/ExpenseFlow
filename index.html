@@ -237,7 +237,8 @@
   <option value="pastel">🌸 Pastel</option>
 </select>
 </div>
-            <a href="javascript:void(0)" class="nav-link" onclick="openLoginModal()">Login</a>
+       <a href="login.html" class="nav-link">Login</a>
+         <a href="register.html" class="nav-link">Register</a>
           </div>
           
           <div class="nav-actions">
@@ -923,16 +924,7 @@ window.addEventListener("DOMContentLoaded", () => {
         </div>
         <h2>Unlock ExpenseFlow</h2>
         <p>Your journey to financial freedom starts here. Sign in to access smart analytics, personalized goals, and secure tracking.</p>
-        
-        <div class="auth-prompt-buttons">
-          <button class="auth-prompt-btn primary" onclick="openLoginModal()">
-            <i class="fas fa-sign-in-alt"></i>
-            Login Now
-          </button>
-          <button class="auth-prompt-btn secondary" onclick="openSignupModal()">
-            <i class="fas fa-user-plus"></i>
-            Get Started
-          </button>
+      
         </div>
         
         <div class="auth-prompt-features">
@@ -947,72 +939,13 @@ window.addEventListener("DOMContentLoaded", () => {
       </div>
     </div>
 
-    <!-- Login Modal Overlay -->
-    <div id="loginModal" class="login-modal-overlay">
-      <div class="login-modal">
-        <button class="login-modal-close" onclick="closeLoginModal()">
-          <i class="fas fa-times"></i>
-        </button>
-        <div class="login-modal-content">
-          <div style="text-align:center; font-size:2rem; margin-bottom:0.5rem;">
-            <i class="fas fa-lock"></i>
-          </div>
-          <h2>Login to ExpenseFlow</h2>
-          <form id="loginFormModal">
-            <div class="form-group">
-              <label for="loginEmailModal">Email:</label>
-              <input type="email" id="loginEmailModal" required placeholder="Enter your email">
-            </div>
-            <div class="form-group">
-              <label for="loginPasswordModal">Password:</label>
-              <input type="password" id="loginPasswordModal" required placeholder="Enter your password">
-            </div>
-            <button type="submit" class="login-btn">Login</button>
-            <p class="login-signup-link">
-              Don't have an account? 
-              <a href="javascript:void(0)" onclick="switchToSignup()">Sign up here</a>
-            </p>
-          </form>
+   
         </div>
       </div>
     </div>
 
-    <!-- Signup Modal Overlay -->
-    <div id="signupModal" class="login-modal-overlay">
-      <div class="login-modal">
-        <button class="login-modal-close" onclick="closeSignupModal()">
-          <i class="fas fa-times"></i>
-        </button>
-        <div class="login-modal-content">
-          <div style="text-align:center; font-size:2rem; margin-bottom:0.5rem;">
-            <i class="fas fa-user-plus"></i>
-          </div>
-          <h2>Sign Up for ExpenseFlow</h2>
-          <form id="signupFormModal">
-            <div class="form-group">
-              <label for="signupUsernameModal">Username:</label>
-              <input type="text" id="signupUsernameModal" required placeholder="Choose a username">
-            </div>
-            <div class="form-group">
-              <label for="signupEmailModal">Email:</label>
-              <input type="email" id="signupEmailModal" required placeholder="Enter your email">
-            </div>
-            <div class="form-group">
-              <label for="signupPasswordModal">Password:</label>
-              <input type="password" id="signupPasswordModal" required placeholder="Create a password">
-            </div>
-            <button type="submit" class="login-btn">Sign Up</button>
-            <p class="login-signup-link">
-              Already have an account? 
-              <a href="javascript:void(0)" onclick="switchToLogin()">Login here</a>
-            </p>
-          </form>
-        </div>
-      </div>
-    </div>
-
-
-
+   
+        
     <script>
       // Mobile Navigation Toggle
       document.addEventListener('DOMContentLoaded', function() {
@@ -1536,6 +1469,10 @@ document.addEventListener("mousemove", (e) => {
   cursor.style.left = e.clientX + "px";
   cursor.style.top = e.clientY + "px";
 });
+
+function openLoginModal() {
+  document.getElementById("loginModal").style.display = "block";
+}
     </script>
    
   </body>
