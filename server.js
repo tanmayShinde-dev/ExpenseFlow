@@ -40,6 +40,8 @@ const adaptiveRiskEngineRoutes = require('./routes/adaptiveRiskEngine');
 const attackGraphRoutes = require('./routes/attackGraph'); // Issue #848: Cross-Account Attack Graph Detection
 const incidentPlaybookRoutes = require('./routes/incidentPlaybooks'); // Issue #851: Autonomous Incident Response Playbooks
 const sessionTrustScoringRoutes = require('./routes/sessionTrustScoring'); // Issue #852: Continuous Session Trust Re-Scoring
+const sessionRecoveryRoutes = require('./routes/sessionRecovery'); // Issue #881: Session Hijacking Prevention & Recovery
+const sessionHijackingMiddleware = require('./middleware/sessionHijackingDetection'); // Issue #881
 const mlAnomalyRoutes = require('./routes/mlAnomaly'); // Issue #878: Behavioral ML Anomaly Detection
 const crossSessionCorrelationRoutes = require('./routes/crossSessionCorrelation'); // Issue #879: Cross-Session Threat Correlation
 const realtimeCollaborationService = require('./services/realtimeCollaborationService');
@@ -221,6 +223,10 @@ mongoose.connect(process.env.MONGODB_URI)
       .catch(err => {
         console.error('Trusted relationships manager initialization error:', err);
       });
+    
+    // Initialize session hijacking detection system
+    // Issue #881: Session Hijacking Prevention & Recovery
+    console.log('✓ Session hijacking detection initialized');
   })
   .catch(err => console.error('MongoDB connection error:', err));
 
@@ -400,6 +406,7 @@ redisSub.on('message', (channel, message) => {
 });
 
 app.use('/api/correlation', crossSessionCorrelationRoutes); // Issue #879: Cross-Session Threat Correlation
+app.use('/api/session-recovery', sessionRecoveryRoutes); // Issue #881: Session Hijacking Prevention & Recovery
 // Routes
 app.use('/api', apiGateway.middleware());
 app.use('/api/auth', require('./middleware/rateLimiter').authLimiter, authRoutes);
@@ -428,7 +435,27 @@ app.use('/api/risk-engine', adaptiveRiskEngineRoutes);
 app.use('/api/attack-graph', attackGraphRoutes); // Issue #848: Cross-Account Attack Graph Detection
 app.use('/api/incident-playbooks', incidentPlaybookRoutes); // Issue #851: Autonomous Incident Response Playbooks
 app.use('/api/session-trust', sessionTrustScoringRoutes); // Issue #852: Continuous Session Trust Re-Scoring
+Apply session hijacking detection middleware to protected routes
+// Issue #881: Session Hijacking Prevention & Recovery
+sessionHijackingMiddleware.applyToRoutes(app, [
+  '/api/expenses',
+  '/api/budgets',
+  '/api/goals',
+  '/api/analytics',
+  '/api/reports',
+  '/api/accounts',
+  '/api/settings',
+  '/api/tax',
+  '/api/encryption',
+  '/api/backups'
+]);
 
+// Serve recovery page
+app.get('/auth/recovery', (req, res) => {
+  res.sendFile(require('path').join(__dirname, 'public', 'session-recovery.html'));
+});
+
+// 
 // Express error handler middleware (must be after all routes)
 app.use((err, req, res, next) => {
   console.error('Express route error:', err);

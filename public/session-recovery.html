@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Recovery - ExpenseFlow</title>
+    <link rel="stylesheet" href="session-recovery.css">
+</head>
+<body>
+    <div class="recovery-container">
+        <div class="recovery-alert">
+            <div class="alert-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+            </div>
+            <h1>🚨 Session Hijacking Detected</h1>
+            <p class="alert-message">
+                We detected suspicious activity on your ExpenseFlow account and terminated your session to protect your data.
+            </p>
+        </div>
+
+        <!-- Step 1: Verification -->
+        <div id="step-verification" class="recovery-step active">
+            <div class="step-header">
+                <h2>Step 1: Verify Your Identity</h2>
+                <p>Please enter the verification code we sent to your email</p>
+            </div>
+
+            <div class="incident-details">
+                <h3>Incident Details</h3>
+                <div class="detail-grid">
+                    <div class="detail-item">
+                        <span class="detail-label">Detection Time:</span>
+                        <span class="detail-value" id="detection-time">-</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Risk Score:</span>
+                        <span class="detail-value" id="risk-score">-</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Suspicious Location:</span>
+                        <span class="detail-value" id="suspicious-location">-</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Detection Method:</span>
+                        <span class="detail-value" id="detection-method">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <form id="verification-form" class="recovery-form">
+                <div class="form-group">
+                    <label for="verification-code">Verification Code</label>
+                    <input 
+                        type="text" 
+                        id="verification-code" 
+                        name="code" 
+                        placeholder="Enter 6-digit code"
+                        maxlength="6"
+                        pattern="[0-9]{6}"
+                        required
+                        autocomplete="off"
+                    >
+                    <small>Code expires in <span id="code-timer">10:00</span></small>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="verify-btn">
+                    Verify Identity
+                </button>
+
+                <button type="button" class="btn btn-secondary" id="resend-code-btn">
+                    Resend Code
+                </button>
+            </form>
+        </div>
+
+        <!-- Step 2: Security Actions -->
+        <div id="step-actions" class="recovery-step">
+            <div class="step-header">
+                <h2>Step 2: Secure Your Account</h2>
+                <p>Complete these actions to regain access to your account</p>
+            </div>
+
+            <div class="action-checklist">
+                <div class="action-item" data-action="change-password">
+                    <div class="action-status">
+                        <span class="status-icon incomplete">○</span>
+                        <span class="status-icon complete" style="display: none;">✓</span>
+                    </div>
+                    <div class="action-content">
+                        <h3>Change Password</h3>
+                        <p>Create a new strong password</p>
+                    </div>
+                    <button class="btn-action" data-action="change-password">
+                        Change
+                    </button>
+                </div>
+
+                <div class="action-item" data-action="revoke-sessions">
+                    <div class="action-status">
+                        <span class="status-icon incomplete">○</span>
+                        <span class="status-icon complete" style="display: none;">✓</span>
+                    </div>
+                    <div class="action-content">
+                        <h3>Revoke All Sessions</h3>
+                        <p>Sign out from all devices</p>
+                    </div>
+                    <button class="btn-action" data-action="revoke-sessions">
+                        Revoke
+                    </button>
+                </div>
+
+                <div class="action-item" data-action="enable-2fa">
+                    <div class="action-status">
+                        <span class="status-icon incomplete">○</span>
+                        <span class="status-icon complete" style="display: none;">✓</span>
+                    </div>
+                    <div class="action-content">
+                        <h3>Enable Two-Factor Authentication</h3>
+                        <p>Add an extra layer of security</p>
+                    </div>
+                    <button class="btn-action" data-action="enable-2fa">
+                        Enable
+                    </button>
+                </div>
+
+                <div class="action-item" data-action="review-log">
+                    <div class="action-status">
+                        <span class="status-icon incomplete">○</span>
+                        <span class="status-icon complete" style="display: none;">✓</span>
+                    </div>
+                    <div class="action-content">
+                        <h3>Review Security Log</h3>
+                        <p>Check recent account activity</p>
+                    </div>
+                    <button class="btn-action" data-action="review-log">
+                        Review
+                    </button>
+                </div>
+            </div>
+
+            <div class="progress-bar">
+                <div class="progress-fill" id="recovery-progress"></div>
+            </div>
+            <p class="progress-text"><span id="completed-count">0</span> of 4 actions completed</p>
+
+            <button class="btn btn-primary" id="complete-recovery-btn" disabled>
+                Complete Recovery
+            </button>
+        </div>
+
+        <!-- Step 3: Completion -->
+        <div id="step-complete" class="recovery-step">
+            <div class="success-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+            </div>
+            <h2>✅ Account Recovered</h2>
+            <p>Your account has been secured successfully. You can now access ExpenseFlow safely.</p>
+            
+            <div class="recommendations">
+                <h3>Security Recommendations</h3>
+                <ul>
+                    <li>Enable two-factor authentication for all accounts</li>
+                    <li>Use a unique, strong password for each service</li>
+                    <li>Be cautious of phishing emails and messages</li>
+                    <li>Regularly review your account activity</li>
+                    <li>Keep your devices and software updated</li>
+                </ul>
+            </div>
+
+            <a href="/dashboard" class="btn btn-primary">
+                Return to Dashboard
+            </a>
+
+            <button class="btn btn-secondary" id="view-forensics-btn">
+                View Detailed Security Report
+            </button>
+        </div>
+
+        <!-- Modals -->
+        <!-- Change Password Modal -->
+        <div id="change-password-modal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h3>Change Password</h3>
+                <form id="change-password-form">
+                    <div class="form-group">
+                        <label for="new-password">New Password</label>
+                        <input type="password" id="new-password" required minlength="8">
+                        <div class="password-strength">
+                            <div class="strength-bar" id="strength-bar"></div>
+                            <span id="strength-text"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirm-password">Confirm Password</label>
+                        <input type="password" id="confirm-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Update Password</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Security Log Modal -->
+        <div id="security-log-modal" class="modal">
+            <div class="modal-content modal-large">
+                <span class="close">&times;</span>
+                <h3>Recent Security Events</h3>
+                <div id="security-log-content" class="log-content">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Forensics Modal -->
+        <div id="forensics-modal" class="modal">
+            <div class="modal-content modal-large">
+                <span class="close">&times;</span>
+                <h3>Detailed Security Report</h3>
+                <div id="forensics-content" class="forensics-content">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container"></div>
+
+    <script src="session-recovery.js"></script>
+</body>
+</html>
