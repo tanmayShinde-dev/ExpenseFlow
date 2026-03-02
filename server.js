@@ -1,7 +1,6 @@
 const express = require('express');
 const http = require('http');
 const crypto = require('crypto');
-const socketIo = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -11,6 +10,7 @@ const { generalLimiter } = require('./middleware/rateLimiter');
 const { sanitizeInput, sanitizationMiddleware, validateDataTypes } = require('./middleware/sanitizer');
 const securityMonitor = require('./services/securityMonitor');
 const apiGateway = require('./middleware/apiGateway');
+const requestContext = require('./middleware/requestContext');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -41,6 +41,7 @@ const containmentActionSystem = require('./services/containmentActionSystem'); /
 const trustedRelationshipsManager = require('./services/trustedRelationshipsManager'); // Issue #879
 const { transportSecuritySuite } = require('./middleware/transportSecurity');
 const cron = require('node-cron');
+const { Server } = require('socket.io');
 
 // Distributed real-time sync dependencies (Safe Initialization)
 let redisPub = null;
@@ -89,15 +90,14 @@ const SERVER_INSTANCE_ID = process.env.SERVER_INSTANCE_ID || crypto.randomUUID()
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
 
-const { Server } = require('socket.io');
 const io = new Server(server, {
   cors: {
     origin: true,
     credentials: true
   }
 });
+
 
 // Initialize Asynchronous Listeners (Issue #711)
 require('./listeners/EmailListeners').init();
@@ -151,6 +151,7 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(requestContext);
 app.use(require('./middleware/encryptionInterceptor'));
 app.use(require('./middleware/validationInterceptor'));
 app.use(require('./middleware/auditInterceptor'));
@@ -265,37 +266,15 @@ async function connectDatabase() {
       .catch(err => {
         console.error('Trusted relationships manager initialization error:', err);
       });
-  })
-  .catch(err => console.error('MongoDB connection error:', err));
-
-// Socket.IO authentication
-io.use(socketAuth);
-
-// Socket.IO connection handling
-io.on('connection', (socket) => {
-  console.log(`User ${socket.user.name} connected`);
-
-  // Join user-specific room
-  socket.join(`user_${socket.userId}`);
-
-  // Handle sync requests
-  socket.on('sync_request', async (data) => {
-    try {
-      // Process sync queue for this user
-      const SyncQueue = require('./models/SyncQueue');
-      const pendingSync = await SyncQueue.find({
-        user: socket.userId,
-        processed: false
-      }).sort({ createdAt: 1 });
-
-      socket.emit('sync_data', pendingSync);
     } catch (error) {
-      socket.emit('sync_error', { error: error.message });
-    }
-  });
+    console.error('Database connection failed:', error.message);
+  }
+}
 
-// Initialize Database
 connectDatabase();
+
+
+
 
 io.use(socketAuth);
 
@@ -488,16 +467,6 @@ app.use('/api/risk-engine', adaptiveRiskEngineRoutes);
 app.use('/api/attack-graph', attackGraphRoutes); // Issue #848: Cross-Account Attack Graph Detection
 app.use('/api/incident-playbooks', incidentPlaybookRoutes); // Issue #851: Autonomous Incident Response Playbooks
 app.use('/api/session-trust', sessionTrustScoringRoutes); // Issue #852: Continuous Session Trust Re-Scoring
-
-// Express error handler middleware (must be after all routes)
-app.use((err, req, res, next) => {
-  console.error('Express route error:', err);
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || 'Internal Server Error',
-    error: process.env.NODE_ENV === 'production' ? undefined : err.stack
-  });
-});
 
 app.get('/', (req, res) => {
   res.json({ status: 'Server running 🚀' });
