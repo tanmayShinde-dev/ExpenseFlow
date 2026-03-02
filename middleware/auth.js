@@ -8,12 +8,14 @@ const {
 } = require('./sessionAnomalyDetection');
 
 const telemetryAggregator = require('../services/telemetryAggregator');
+const PrivilegeTransitionMonitor = require('../services/privilegeTransitionMonitor');
 
 /**
  * Enhanced Authentication Middleware with Session Tracking
  * Issue #338: Enterprise-Grade Audit Trail & TOTP Security Suite
  * Issue #562: Session Anomaly Detection via IP/UA Drift
  * Issue #755: Telemetry Forensics Injection
+ * Issue #872: Zero-Trust Privilege Transition Monitoring
  */
 
 const auth = async (req, res, next) => {
@@ -88,6 +90,30 @@ const auth = async (req, res, next) => {
     }
 
     req.user = user;
+
+    // Monitor privilege transitions (Issue #872)
+    if (req.sessionId) {
+      const requestContext = {
+        endpoint: req.originalUrl,
+        method: req.method,
+        requiredRole: this.extractRequiredRole(req),
+        action: this.extractAction(req),
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        deviceFingerprint: req.deviceFingerprint
+      };
+
+      // Monitor the transition asynchronously (don't block auth)
+      PrivilegeTransitionMonitor.monitorTransition(
+        req.sessionId,
+        user._id,
+        requestContext,
+        user
+      ).catch(error => {
+        console.error('Privilege transition monitoring error:', error);
+      });
+    }
+
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
@@ -104,6 +130,62 @@ const auth = async (req, res, next) => {
     }
     res.status(401).json({ error: 'Authentication failed.' });
   }
+};
+
+/**
+ * Extract required role from request (for privilege monitoring)
+ */
+auth.extractRequiredRole = function(req) {
+  // Check route-level role requirements
+  if (req.route && req.route.role) {
+    return req.route.role;
+  }
+
+  // Check endpoint patterns for role requirements
+  const endpoint = req.originalUrl;
+
+  if (endpoint.includes('/admin')) return 'ADMIN';
+  if (endpoint.includes('/security')) return 'SECURITY_ADMIN';
+  if (endpoint.includes('/audit')) return 'AUDITOR';
+  if (endpoint.includes('/users') && req.method !== 'GET') return 'ADMIN';
+
+  // Default based on user role
+  return req.user?.role || 'USER';
+};
+
+/**
+ * Extract action type from request (for privilege monitoring)
+ */
+auth.extractAction = function(req) {
+  const endpoint = req.originalUrl;
+  const method = req.method;
+
+  // Role changes
+  if (endpoint.includes('/users') && endpoint.includes('role')) {
+    return 'CHANGE_ROLE';
+  }
+
+  // Data export
+  if (endpoint.includes('/export') || endpoint.includes('/download')) {
+    return 'EXPORT_DATA';
+  }
+
+  // Payment modifications
+  if (endpoint.includes('/payments') && ['POST', 'PUT', 'PATCH'].includes(method)) {
+    return 'MODIFY_PAYMENT';
+  }
+
+  // Configuration changes
+  if ((endpoint.includes('/config') || endpoint.includes('/settings')) && ['POST', 'PUT', 'PATCH'].includes(method)) {
+    return 'MODIFY_CONFIG';
+  }
+
+  // Admin endpoints
+  if (endpoint.includes('/admin')) {
+    return 'ADMIN_ACCESS';
+  }
+
+  return 'GENERAL_ACCESS';
 };
 
 /**

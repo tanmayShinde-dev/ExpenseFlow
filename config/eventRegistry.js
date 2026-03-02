@@ -9,7 +9,8 @@ module.exports = {
         REGISTERED: 'user.registered',
         UPDATED: 'user.updated',
         PASSWORD_CHANGED: 'user.password_changed',
-        DELETED: 'user.deleted'
+        DELETED: 'user.deleted',
+        ROLE_CHANGED: 'user.role_changed'
     },
     TRANSACTION: {
         CREATED: 'transaction.created',
@@ -25,6 +26,12 @@ module.exports = {
     SECURITY: {
         LOGIN_SUCCESS: 'security.login_success',
         LOGIN_FAILURE: 'security.login_failure',
-        UNAUTHORIZED_ACCESS: 'security.unauthorized_access'
+        UNAUTHORIZED_ACCESS: 'security.unauthorized_access',
+        PRIVILEGE_TRANSITION_DETECTED: 'security.privilege_transition_detected',
+        JIT_PRIVILEGE_EXPIRED: 'security.jit_privilege_expired',
+        ADMIN_ENDPOINT_ACCESSED: 'security.admin_endpoint_accessed',
+        DATA_EXPORT_INITIATED: 'security.data_export_initiated',
+        PAYMENT_MODIFIED: 'security.payment_modified',
+        CONFIGURATION_MODIFIED: 'security.configuration_modified'
     }
 };

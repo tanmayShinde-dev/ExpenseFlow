@@ -31,8 +31,11 @@ const adaptiveRiskEngineRoutes = require('./routes/adaptiveRiskEngine');
 const attackGraphRoutes = require('./routes/attackGraph'); // Issue #848: Cross-Account Attack Graph Detection
 const incidentPlaybookRoutes = require('./routes/incidentPlaybooks'); // Issue #851: Autonomous Incident Response Playbooks
 const sessionTrustScoringRoutes = require('./routes/sessionTrustScoring'); // Issue #852: Continuous Session Trust Re-Scoring
+const sessionRecoveryRoutes = require('./routes/sessionRecovery'); // Issue #881: Session Hijacking Prevention & Recovery
+const sessionHijackingMiddleware = require('./middleware/sessionHijackingDetection'); // Issue #881
 const mlAnomalyRoutes = require('./routes/mlAnomaly'); // Issue #878: Behavioral ML Anomaly Detection
 const crossSessionCorrelationRoutes = require('./routes/crossSessionCorrelation'); // Issue #879: Cross-Session Threat Correlation
+const privilegeTransitionMonitorRoutes = require('./routes/privilegeTransitionMonitor'); // Issue #872: Zero-Trust Privilege Transition Monitoring
 const realtimeCollaborationService = require('./services/realtimeCollaborationService');
 const attackGraphIntegrationService = require('./services/attackGraphIntegrationService'); // Issue #848
 const mlAnomalyDetectionService = require('./services/mlAnomalyDetectionService'); // Issue #878
@@ -159,6 +162,8 @@ app.use(require('./middleware/auditInterceptor'));
 app.use(require('./middleware/auditTraceability'));
 app.use(require('./middleware/taxDeductionInterceptor')); // Issue #843
 app.use(require('./middleware/shardResolver')); // Issue #842: Distributed Ledger Fabric
+app.use(require('./middleware/partitionAwareGuard')); // Issue #868: Multi-Master Consensus
+app.use(require('./middleware/privacyProverGuard')); // Issue #867: ZK-Compliance Attestation
 app.use(require('./middleware/tenantResolver'));
 // Inject Circuit Breaker protection early in the pipeline
 // We pass 'TRANSACTION' as a default, though specific routers might override it
@@ -223,7 +228,7 @@ async function connectDatabase() {
 
     attackGraphIntegrationService.initialize();
     console.log('✓ Attack graph detection initialized');
-    
+
     // Initialize ML anomaly detection system
     // Issue #878: Behavioral ML Anomaly Detection
     mlAnomalyDetectionService.initialize()
@@ -239,7 +244,7 @@ async function connectDatabase() {
     // Issue #877: Real-Time Threat Intelligence Integration
     threatIntelIntegrationService.initialize();
     console.log('✓ Threat intelligence integration initialized');
-    
+
     // Initialize cross-session threat correlation system
     // Issue #879: Cross-Session Threat Correlation
     crossSessionThreatCorrelationService.initialize()
@@ -249,7 +254,7 @@ async function connectDatabase() {
       .catch(err => {
         console.error('Cross-session correlation initialization error:', err);
       });
-    
+
     // Initialize containment action system
     containmentActionSystem.initialize()
       .then(() => {
@@ -258,7 +263,7 @@ async function connectDatabase() {
       .catch(err => {
         console.error('Containment action system initialization error:', err);
       });
-    
+
     // Initialize trusted relationships manager
     trustedRelationshipsManager.initialize()
       .then(() => {
@@ -286,21 +291,21 @@ io.on('connection', (socket) => {
   socket.on('expense_created', (expense) => {
     io.emit('expense_created', expense);
     if (redisPub) {
-    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_created', expense }));
+      redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_created', expense }));
     }
   });
 
   socket.on('expense_updated', (expense) => {
     io.emit('expense_updated', expense);
     if (redisPub) {
-    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_updated', expense }));
+      redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_updated', expense }));
     }
   });
 
   socket.on('expense_deleted', (data) => {
     io.emit('expense_deleted', data);
     if (redisPub) {
-    redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_deleted', data }));
+      redisPub.publish(SYNC_CHANNEL, JSON.stringify({ type: 'expense_deleted', data }));
     }
   });
 
@@ -367,7 +372,9 @@ io.on('connection', (socket) => {
       };
 
       socket.to(`collab_doc_${documentId}`).emit('collab:operations', eventPayload);
-      redisPub.publish(COLLAB_CHANNEL, JSON.stringify(eventPayload));
+      if (redisPub) {
+        redisPub.publish(COLLAB_CHANNEL, JSON.stringify(eventPayload));
+      }
     } catch (error) {
       socket.emit('collab:error', { error: error.message });
     }
@@ -400,46 +407,53 @@ io.on('connection', (socket) => {
 
 // Listen for Redis sync events and broadcast to local clients
 if (redisSub) {
-redisSub.subscribe(SYNC_CHANNEL, (err) => {
-  if (err) console.error('Redis subscribe error:', err);
-});
+  redisSub.subscribe(SYNC_CHANNEL, (err) => {
+    if (err) console.error('Redis subscribe error:', err);
+  });
 
-redisSub.subscribe(COLLAB_CHANNEL, (err) => {
-  if (err) console.error('Redis collab subscribe error:', err);
-});
+  redisSub.subscribe(COLLAB_CHANNEL, (err) => {
+    if (err) console.error('Redis collab subscribe error:', err);
+  });
 
-redisSub.on('message', (channel, message) => {
-  try {
-    const payload = JSON.parse(message);
+  redisSub.on('message', (channel, message) => {
+    try {
+      const payload = JSON.parse(message);
 
-    if (channel === COLLAB_CHANNEL) {
-      if (payload.serverInstanceId === SERVER_INSTANCE_ID) {
+      if (channel === COLLAB_CHANNEL) {
+        if (payload.serverInstanceId === SERVER_INSTANCE_ID) {
+          return;
+        }
+        if (payload.documentId) {
+          io.to(`collab_doc_${payload.documentId}`).emit('collab:operations', payload);
+        }
         return;
       }
-      if (payload.documentId) {
-        io.to(`collab_doc_${payload.documentId}`).emit('collab:operations', payload);
+
+      if (channel !== SYNC_CHANNEL) {
+        return;
       }
-      return;
-    }
 
-    if (channel !== SYNC_CHANNEL) {
-      return;
+      if (payload.type === 'expense_created') {
+        io.emit('expense_created', payload.expense);
+      } else if (payload.type === 'expense_updated') {
+        io.emit('expense_updated', payload.expense);
+      } else if (payload.type === 'expense_deleted') {
+        io.emit('expense_deleted', payload.data);
+      }
+    } catch (e) {
+      console.error('Redis sync event error:', e);
     }
+  });
+}
 
-    if (payload.type === 'expense_created') {
-      io.emit('expense_created', payload.expense);
-    } else if (payload.type === 'expense_updated') {
-      io.emit('expense_updated', payload.expense);
-    } else if (payload.type === 'expense_deleted') {
-      io.emit('expense_deleted', payload.data);
-    }
-  } catch (e) {
-    console.error('Redis sync event error:', e);
-  }
-});
+// Add issue specific jobs here
+if (process.env.NODE_ENV !== 'production') {
+  require('./jobs/entropyPruner').start(); // Issue #868: Metadata management
+  require('./jobs/nightlyProver').start(); // Issue #867: ZK-Compliance Proving
 }
 
 app.use('/api/correlation', crossSessionCorrelationRoutes); // Issue #879: Cross-Session Threat Correlation
+app.use('/api/session-recovery', sessionRecoveryRoutes); // Issue #881: Session Hijacking Prevention & Recovery
 // Routes
 app.use('/api', apiGateway.middleware());
 app.use('/api/auth', require('./middleware/rateLimiter').authLimiter, authRoutes);
@@ -468,6 +482,25 @@ app.use('/api/risk-engine', adaptiveRiskEngineRoutes);
 app.use('/api/attack-graph', attackGraphRoutes); // Issue #848: Cross-Account Attack Graph Detection
 app.use('/api/incident-playbooks', incidentPlaybookRoutes); // Issue #851: Autonomous Incident Response Playbooks
 app.use('/api/session-trust', sessionTrustScoringRoutes); // Issue #852: Continuous Session Trust Re-Scoring
+Apply session hijacking detection middleware to protected routes
+// Issue #881: Session Hijacking Prevention & Recovery
+sessionHijackingMiddleware.applyToRoutes(app, [
+  '/api/expenses',
+  '/api/budgets',
+  '/api/goals',
+  '/api/analytics',
+  '/api/reports',
+  '/api/accounts',
+  '/api/settings',
+  '/api/tax',
+  '/api/encryption',
+  '/api/backups'
+]);
+
+// Serve recovery page
+app.get('/auth/recovery', (req, res) => {
+  res.sendFile(require('path').join(__dirname, 'public', 'session-recovery.html'));
+});
 
 app.get('/', (req, res) => {
   res.json({ status: 'Server running 🚀' });
@@ -496,4 +529,3 @@ if (process.env.NODE_ENV !== 'production') {
 ================================ */
 
 module.exports = app;
-
