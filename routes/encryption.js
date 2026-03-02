@@ -3,7 +3,7 @@ const router = express.Router();
 const kms = require('../services/keyManagementService');
 const encryptionService = require('../services/encryptionService');
 const auth = require('../middleware/auth');
-const { rbac } = require('../middleware/rbac');
+const { requireRole } = require('../middleware/rbac');
 const { 
   encryptRequestFields, 
   decryptResponseFields,
@@ -249,7 +249,7 @@ router.post('/mask',
  */
 router.post('/keys/generate',
   auth,
-  rbac(['admin', 'security-admin']),
+  requireRole('owner'),
   async (req, res) => {
     try {
       const { purpose, keyType = 'data' } = req.body;
@@ -280,7 +280,7 @@ router.post('/keys/generate',
  */
 router.post('/keys/rotate',
   auth,
-  rbac(['admin', 'security-admin']),
+  requireRole('owner'),
   async (req, res) => {
     try {
       const { purpose } = req.body;
@@ -309,7 +309,7 @@ router.post('/keys/rotate',
  */
 router.post('/keys/revoke',
   auth,
-  rbac(['admin', 'security-admin']),
+  requireRole('owner'),
   async (req, res) => {
     try {
       const { keyId, reason } = req.body;
@@ -338,7 +338,7 @@ router.post('/keys/revoke',
  */
 router.get('/keys',
   auth,
-  rbac(['admin', 'security-admin']),
+  requireRole('owner'),
   async (req, res) => {
     try {
       const { purpose, status } = req.query;
@@ -367,7 +367,7 @@ router.get('/keys',
  */
 router.get('/keys/:keyId',
   auth,
-  rbac(['admin', 'security-admin']),
+  requireRole('owner'),
   async (req, res) => {
     try {
       const { keyId } = req.params;
@@ -393,7 +393,7 @@ router.get('/keys/:keyId',
  */
 router.post('/keys/backup',
   auth,
-  rbac(['admin']),
+  requireRole('owner'),
   async (req, res) => {
     try {
       const { password } = req.body;
@@ -424,7 +424,7 @@ router.post('/keys/backup',
  */
 router.post('/keys/restore',
   auth,
-  rbac(['admin']),
+  requireRole('owner'),
   async (req, res) => {
     try {
       const { backup, password } = req.body;
@@ -456,7 +456,7 @@ router.post('/keys/restore',
  */
 router.get('/health',
   auth,
-  rbac(['admin', 'security-admin']),
+  requireRole('owner'),
   async (req, res) => {
     try {
       const health = await kms.getKeyHealthMetrics();
@@ -523,7 +523,7 @@ router.get('/status',
  */
 router.get('/compliance',
   auth,
-  rbac(['admin', 'compliance-officer']),
+  requireRole('manager'),
   async (req, res) => {
     try {
       const attestation = encryptionService.getComplianceAttestation();
