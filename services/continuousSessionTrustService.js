@@ -17,6 +17,7 @@ const BehaviorSignalAnalysisEngine = require('./behaviorSignalAnalysisEngine');
 const TrustScoringEngine = require('./trustScoringEngine');
 const ChallengeOrchestrationService = require('./challengeOrchestrationService');
 const AdaptiveThresholdEngine = require('./adaptiveThresholdEngine');
+const ThreatIntelIntegrationService = require('./threatIntelIntegrationService');
 
 class ContinuousSessionTrustService {
   /**
@@ -101,11 +102,28 @@ class ContinuousSessionTrustService {
         throw new Error('Trust score record not found');
       }
 
+      // Enrich with external threat intelligence before signal collection
+      const threatIntel = await ThreatIntelIntegrationService.getThreatAssessment({
+        ipAddress: requestContext.ipAddress,
+        malwareChecksum: requestContext.malwareChecksum,
+        c2CallbackUrl: requestContext.c2CallbackUrl,
+        requestContext
+      });
+
+      const scoringContext = {
+        ...requestContext,
+        threatIntel,
+        knownThreats: [
+          ...(requestContext.knownThreats || []),
+          ...(threatIntel.overallRiskScore >= 80 && requestContext.ipAddress ? [requestContext.ipAddress] : [])
+        ]
+      };
+
       // Collect behavioral signals
       const signals = await BehaviorSignalAnalysisEngine.collectSignals(
         sessionId,
         userId,
-        requestContext
+        scoringContext
       );
 
       // Analyze signals for anomalies
@@ -155,6 +173,7 @@ class ContinuousSessionTrustService {
         enforcementTier: trustScore.currentEnforcementTier,
         action: this.getEnforcementAction(trustScore.currentEnforcementTier),
         detail: trustScore.getTrustExplanation(),
+        threatIntel,
         signals: signals.length,
         componentsUpdated: Object.keys(newComponentScores),
       };
@@ -478,6 +497,65 @@ class ContinuousSessionTrustService {
       };
     } catch (error) {
       console.error('Error getting user trust metrics:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Propagate realtime threat intel updates to active sessions immediately
+   */
+  async propagateThreatIntelUpdate(indicatorPayload = {}) {
+    try {
+      const { indicatorType, indicatorValue } = indicatorPayload;
+
+      if (!indicatorType || !indicatorValue) {
+        return { processed: 0, affectedSessions: 0, errors: [] };
+      }
+
+      const sessionQuery = {
+        status: 'active',
+        expiresAt: { $gt: new Date() }
+      };
+
+      if (indicatorType === 'IP' || indicatorType === 'BOTNET_IP') {
+        sessionQuery['location.ipAddress'] = indicatorValue;
+      } else if (indicatorType === 'CALLBACK_URL' || indicatorType === 'C2_CALLBACK_URL') {
+        sessionQuery['activity.lastEndpoint'] = { $regex: indicatorValue, $options: 'i' };
+      }
+
+      const sessions = await Session.find(sessionQuery)
+        .select('_id userId location activity userAgent')
+        .limit(Number(process.env.THREAT_INTEL_MAX_IMMEDIATE_RESCORING || 200));
+
+      let processed = 0;
+      const errors = [];
+
+      for (const session of sessions) {
+        try {
+          await this.performTrustReScoring(session._id, session.userId, {
+            endpoint: session.activity?.lastEndpoint || '/api/session-trust/realtime-threat-intel',
+            method: 'SYSTEM',
+            ipAddress: session.location?.ipAddress,
+            userAgent: session.userAgent,
+            malwareChecksum: indicatorType === 'CHECKSUM' ? indicatorValue : undefined,
+            c2CallbackUrl: (indicatorType === 'CALLBACK_URL' || indicatorType === 'C2_CALLBACK_URL') ? indicatorValue : undefined,
+            knownThreats: (indicatorType === 'IP' || indicatorType === 'BOTNET_IP') ? [indicatorValue] : [],
+            triggerReason: 'REALTIME_THREAT_INTEL_CALLBACK'
+          });
+
+          processed += 1;
+        } catch (error) {
+          errors.push({ sessionId: session._id, error: error.message });
+        }
+      }
+
+      return {
+        processed,
+        affectedSessions: sessions.length,
+        errors
+      };
+    } catch (error) {
+      console.error('Error propagating threat intel update:', error);
       throw error;
     }
   }

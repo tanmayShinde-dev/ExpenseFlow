@@ -13,6 +13,7 @@ const ContinuousSessionTrustService = require('../services/continuousSessionTrus
 const BehaviorSignalAnalysisEngine = require('../services/behaviorSignalAnalysisEngine');
 const ChallengeOrchestrationService = require('../services/challengeOrchestrationService');
 const AdaptiveThresholdEngine = require('../services/adaptiveThresholdEngine');
+const ThreatIntelIntegrationService = require('../services/threatIntelIntegrationService');
 
 const SessionTrustScore = require('../models/SessionTrustScore');
 const SessionBehaviorSignal = require('../models/SessionBehaviorSignal');
@@ -27,6 +28,118 @@ router.use(authMiddleware);
 // ========================================
 // SESSION TRUST SCORE MANAGEMENT
 // ========================================
+
+/**
+ * GET /api/session-trust/threat-intel/status
+ * Get threat intelligence provider and cache status
+ */
+router.get('/threat-intel/status', async (req, res) => {
+  try {
+    const status = await ThreatIntelIntegrationService.getStatus();
+
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    console.error('Error getting threat intel status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get threat intel status',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/session-trust/threat-intel/assess
+ * Assess provided indicators via configured providers
+ */
+router.post('/threat-intel/assess', async (req, res) => {
+  try {
+    const {
+      ipAddress,
+      malwareChecksum,
+      c2CallbackUrl,
+      forceRefresh = false
+    } = req.body || {};
+
+    const assessment = await ThreatIntelIntegrationService.getThreatAssessment({
+      ipAddress,
+      malwareChecksum,
+      c2CallbackUrl,
+      forceRefresh,
+      requestContext: {
+        userId: req.user?._id,
+        sessionId: req.sessionId
+      }
+    });
+
+    res.json({
+      success: true,
+      data: assessment
+    });
+  } catch (error) {
+    console.error('Error assessing threat intel:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to assess threat intel',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/session-trust/threat-intel/ingest
+ * Ingest external feed updates and immediately propagate to active sessions
+ */
+router.post('/threat-intel/ingest', async (req, res) => {
+  try {
+    const feedToken = req.headers['x-threat-intel-token'];
+    const configuredFeedToken = process.env.THREAT_INTEL_INGEST_TOKEN;
+
+    if (configuredFeedToken && feedToken !== configuredFeedToken) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized feed token'
+      });
+    }
+
+    const {
+      indicatorType,
+      indicatorValue,
+      source = 'EXTERNAL_FEED',
+      ttlSeconds
+    } = req.body || {};
+
+    const ingested = await ThreatIntelIntegrationService.ingestIndicator({
+      indicatorType,
+      indicatorValue,
+      source,
+      ttlSeconds
+    });
+
+    const propagation = await ContinuousSessionTrustService.propagateThreatIntelUpdate({
+      indicatorType,
+      indicatorValue
+    });
+
+    res.json({
+      success: true,
+      data: {
+        ingested,
+        propagation
+      }
+    });
+  } catch (error) {
+    console.error('Error ingesting threat intel feed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to ingest threat intel feed',
+      message: error.message
+    });
+  }
+});
 
 /**
  * GET /api/session-trust/current

@@ -345,6 +345,11 @@ class TrustScoringEngine {
 
     for (const signal of signals) {
       const threatType = signal.details?.threatType || 'UNKNOWN';
+      const intelRiskScore = Number(signal.details?.context?.overallRiskScore || 0);
+
+      if (intelRiskScore > 0) {
+        penalty = Math.max(penalty, intelRiskScore);
+      }
 
       if (threatType === 'IP_BLACKLIST') {
         penalty = 50;
@@ -352,6 +357,12 @@ class TrustScoringEngine {
         penalty = 60;
       } else if (threatType === 'BOTNET') {
         penalty = 55;
+      } else if (threatType === 'KNOWN_BOTNET_IP') {
+        penalty = 65;
+      } else if (threatType === 'MALWARE_CHECKSUM') {
+        penalty = 70;
+      } else if (threatType === 'C2_CALLBACK') {
+        penalty = 75;
       } else if (threatType === 'KNOWN_ATTACKER') {
         penalty = 70;
       } else {

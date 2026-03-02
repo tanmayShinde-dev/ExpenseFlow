@@ -35,6 +35,7 @@ const crossSessionCorrelationRoutes = require('./routes/crossSessionCorrelation'
 const realtimeCollaborationService = require('./services/realtimeCollaborationService');
 const attackGraphIntegrationService = require('./services/attackGraphIntegrationService'); // Issue #848
 const mlAnomalyDetectionService = require('./services/mlAnomalyDetectionService'); // Issue #878
+const threatIntelIntegrationService = require('./services/threatIntelIntegrationService'); // Issue #877
 const crossSessionThreatCorrelationService = require('./services/crossSessionThreatCorrelationService'); // Issue #879
 const containmentActionSystem = require('./services/containmentActionSystem'); // Issue #879
 const trustedRelationshipsManager = require('./services/trustedRelationshipsManager'); // Issue #879
@@ -231,6 +232,11 @@ async function connectDatabase() {
         console.error('ML anomaly detection initialization error:', err);
         console.log('⚠ ML system will train on first use');
       });
+
+    // Initialize threat intelligence integration
+    // Issue #877: Real-Time Threat Intelligence Integration
+    threatIntelIntegrationService.initialize();
+    console.log('✓ Threat intelligence integration initialized');
     
     // Initialize cross-session threat correlation system
     // Issue #879: Cross-Session Threat Correlation

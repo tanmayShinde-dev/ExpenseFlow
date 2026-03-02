@@ -11,7 +11,7 @@ const threatIntelligenceCacheSchema = new mongoose.Schema({
   // Entity being enriched
   entityType: {
     type: String,
-    enum: ['IP', 'EMAIL', 'DOMAIN', 'ASN', 'USER_AGENT'],
+    enum: ['IP', 'EMAIL', 'DOMAIN', 'ASN', 'USER_AGENT', 'CHECKSUM', 'CALLBACK_URL'],
     required: true,
     index: true
   },
@@ -102,6 +102,17 @@ const threatIntelligenceCacheSchema = new mongoose.Schema({
       lastBreachDate: Date,
       confidence: { type: Number, min: 0, max: 1 },
       sources: [String],
+      fetchedAt: Date,
+      ttl: Number
+    },
+
+    // Generic threat intel payload (Issue #877)
+    customThreat: {
+      indicatorType: String,
+      indicators: [String],
+      confidence: { type: Number, min: 0, max: 1 },
+      source: String,
+      providerCount: Number,
       fetchedAt: Date,
       ttl: Number
     }

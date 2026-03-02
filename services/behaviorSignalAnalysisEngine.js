@@ -80,7 +80,7 @@ class BehaviorSignalAnalysisEngine {
       }
 
       // Collect IP change signal
-      if (requestContext.ipAddress && session.ipAddress) {
+      if (requestContext.ipAddress && session.location?.ipAddress) {
         signals.push(
           await this.collectIPChangeSignal(
             sessionId,
@@ -438,9 +438,40 @@ class BehaviorSignalAnalysisEngine {
   async collectThreatIndicatorSignal(sessionId, userId, requestContext) {
     try {
       const ipAddress = requestContext.ipAddress;
+      const threatIntel = requestContext.threatIntel;
+      const intelThreshold = Number(process.env.THREAT_INTEL_SIGNAL_THRESHOLD || 60);
       
       // Check IP against blacklist (simplified)
       const knownThreats = requestContext.knownThreats || [];
+
+      if (threatIntel && Number(threatIntel.overallRiskScore || 0) >= intelThreshold) {
+        const topIndicator = threatIntel.indicators?.[0] || 'EXTERNAL_THREAT_INTEL';
+        const confidence = Math.min(100, Math.round(Number(threatIntel.confidence || 0.8) * 100));
+
+        let severity = 'MEDIUM';
+        if (threatIntel.overallRiskScore >= 85) severity = 'CRITICAL';
+        else if (threatIntel.overallRiskScore >= 70) severity = 'HIGH';
+
+        return new SessionBehaviorSignal({
+          sessionId,
+          userId,
+          signalType: 'KNOWN_THREAT',
+          severity,
+          trustImpact: severity === 'CRITICAL' ? -60 : -45,
+          confidence,
+          details: {
+            threatType: topIndicator,
+            threatSource: 'THREAT_INTEL_INTEGRATION',
+            threatConfidence: confidence,
+            context: {
+              overallRiskScore: threatIntel.overallRiskScore,
+              indicators: threatIntel.indicators,
+              providers: threatIntel.byIndicator?.map(item => item.indicatorType)
+            }
+          },
+          detectedAt: new Date(),
+        });
+      }
 
       if (knownThreats.includes(ipAddress)) {
         return new SessionBehaviorSignal({
