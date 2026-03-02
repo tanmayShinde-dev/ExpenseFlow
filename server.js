@@ -32,6 +32,7 @@ const incidentPlaybookRoutes = require('./routes/incidentPlaybooks'); // Issue #
 const sessionTrustScoringRoutes = require('./routes/sessionTrustScoring'); // Issue #852: Continuous Session Trust Re-Scoring
 const mlAnomalyRoutes = require('./routes/mlAnomaly'); // Issue #878: Behavioral ML Anomaly Detection
 const crossSessionCorrelationRoutes = require('./routes/crossSessionCorrelation'); // Issue #879: Cross-Session Threat Correlation
+const privilegeTransitionMonitorRoutes = require('./routes/privilegeTransitionMonitor'); // Issue #872: Zero-Trust Privilege Transition Monitoring
 const realtimeCollaborationService = require('./services/realtimeCollaborationService');
 const attackGraphIntegrationService = require('./services/attackGraphIntegrationService'); // Issue #848
 const mlAnomalyDetectionService = require('./services/mlAnomalyDetectionService'); // Issue #878
@@ -488,6 +489,7 @@ app.use('/api/risk-engine', adaptiveRiskEngineRoutes);
 app.use('/api/attack-graph', attackGraphRoutes); // Issue #848: Cross-Account Attack Graph Detection
 app.use('/api/incident-playbooks', incidentPlaybookRoutes); // Issue #851: Autonomous Incident Response Playbooks
 app.use('/api/session-trust', sessionTrustScoringRoutes); // Issue #852: Continuous Session Trust Re-Scoring
+app.use('/api/privilege-monitor', privilegeTransitionMonitorRoutes); // Issue #872: Zero-Trust Privilege Transition Monitoring
 
 // Express error handler middleware (must be after all routes)
 app.use((err, req, res, next) => {
