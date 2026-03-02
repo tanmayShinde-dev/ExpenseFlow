@@ -11,6 +11,7 @@ const { sanitizeInput, sanitizationMiddleware, validateDataTypes } = require('./
 const securityMonitor = require('./services/securityMonitor');
 const apiGateway = require('./middleware/apiGateway');
 const requestContext = require('./middleware/requestContext');
+const requestCorrelation = require('./middleware/requestCorrelation');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -145,12 +146,12 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-/* ================================
-   BODY PARSER
-================================ */
-
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// 🔥 Register correlation middleware EARLY
+app.use(requestCorrelation);
+
 app.use(requestContext);
 app.use(require('./middleware/encryptionInterceptor'));
 app.use(require('./middleware/validationInterceptor'));
