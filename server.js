@@ -177,6 +177,7 @@ app.use(require('./middleware/journalInterceptor'));
 app.use(require('./middleware/fieldMasker'));
 app.use(require('./middleware/performanceInterceptor'));
 app.use(require('./middleware/leakageMonitor'));
+app.use(require('./middleware/integrityMonitor')); // Issue #910: Financial Integrity Watchtower
 
 
 
@@ -217,6 +218,7 @@ async function connectDatabase() {
         require('./jobs/velocityCalculator').start();
         require('./jobs/keyRotator').start();
         require('./jobs/neuralReindexer').start();
+        require('./jobs/nightlyReconciler').start(); // Issue #910: Self-Healing Reconciliation
 
         require('./services/jobOrchestrator').start();
 
@@ -273,12 +275,16 @@ async function connectDatabase() {
       .catch(err => {
         console.error('Trusted relationships manager initialization error:', err);
       });
-    
+
     // Initialize session hijacking detection system
     // Issue #881: Session Hijacking Prevention & Recovery
     console.log('✓ Session hijacking detection initialized');
-  })
-  .catch(err => console.error('MongoDB connection error:', err));
+  } catch (err) {
+    console.error('MongoDB connection error:', err);
+  }
+}
+
+connectDatabase();
 
 
 
