@@ -178,6 +178,7 @@ app.use(require('./middleware/fieldMasker'));
 app.use(require('./middleware/performanceInterceptor'));
 app.use(require('./middleware/leakageMonitor'));
 app.use(require('./middleware/integrityMonitor')); // Issue #910: Financial Integrity Watchtower
+app.use(require('./middleware/liquidityAlertGuard')); // Issue #909: Predictive Liquidity Prophet
 
 
 
@@ -219,6 +220,7 @@ async function connectDatabase() {
         require('./jobs/keyRotator').start();
         require('./jobs/neuralReindexer').start();
         require('./jobs/nightlyReconciler').start(); // Issue #910: Self-Healing Reconciliation
+        require('./jobs/weeklyProphet').start(); // Issue #909: Predictive Liquidity Prophet
 
         require('./services/jobOrchestrator').start();
 
