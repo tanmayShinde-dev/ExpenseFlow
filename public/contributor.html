@@ -262,6 +262,65 @@
 #scrollTopBtn:hover {
     transform: translateY(-5px) scale(1.1);
     box-shadow: 0 12px 30px rgba(100, 255, 218, 0.5);
+}/* ===============================
+   THEME VARIABLES
+================================= */
+
+:root {
+    --bg-primary: #0f0f23;
+    --bg-secondary: rgba(255,255,255,0.06);
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255,255,255,0.7);
+    --accent: #64ffda;
+    --card-bg: rgba(255,255,255,0.06);
+}
+
+/* LIGHT MODE */
+body.light-mode {
+    --bg-primary: #f5f7fb;
+    --bg-secondary: #ffffff;
+    --text-primary: #1a1a1a;
+    --text-secondary: #555;
+    --accent: #667eea;
+    --card-bg: #ffffff;
+}
+
+/* Apply variables */
+body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background 0.3s ease, color 0.3s ease;
+}
+
+/* Cards */
+.contributor-card,
+.footer,
+.navbar {
+    background: var(--card-bg);
+    color: var(--text-primary);
+    transition: all 0.3s ease;
+}
+
+/* Links */
+a {
+    color: var(--accent);
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 6px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-right: 10px;
+}
+
+.theme-toggle:hover {
+    background: var(--accent);
+    color: var(--bg-primary);
 }
 </style>
 
@@ -459,6 +518,9 @@
             <option value="es">ES</option>
             <option value="fr">FR</option>
           </select>
+          <button id="themeToggle" class="theme-toggle" title="Toggle Theme">
+    <i class="fas fa-moon"></i>
+</button>
           <button class="currency-btn" onclick="openCurrencyModal()" title="Currency Settings">
             <i class="fas fa-coins"></i>
             <span id="current-currency">INR</span>
@@ -669,6 +731,27 @@
             behavior: "smooth"
         });
     });
+</script>
+<script>
+const themeToggle = document.getElementById("themeToggle");
+
+// Load saved theme
+if (localStorage.getItem("theme") === "light") {
+    document.body.classList.add("light-mode");
+    themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+}
+
+themeToggle.addEventListener("click", () => {
+    document.body.classList.toggle("light-mode");
+
+    if (document.body.classList.contains("light-mode")) {
+        localStorage.setItem("theme", "light");
+        themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+    } else {
+        localStorage.setItem("theme", "dark");
+        themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+    }
+});
 </script>
 </body>
 
