@@ -552,7 +552,21 @@
         .stat-value {
           font-size: 1.5rem;
         }
-      }
+      }/* ================= LIGHT MODE ================= */
+
+body.light-mode {
+  --bg-primary: #f5f7fb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #ffffff;
+
+  --text-primary: #1a1a1a;
+  --text-secondary: #555555;
+  --text-accent: #667eea;
+
+  --accent-primary: #667eea;
+
+  background-image: none;
+}
     </style>
 </head>
 <body>
@@ -570,6 +584,9 @@
             <a href="goals.html" class="nav-link">Goals</a>
             <a href="#settings" class="nav-link">Settings</a>
           </div>
+          <button id="themeToggle" class="theme-toggle">
+  <i class="fas fa-moon"></i>
+</button>
           <div class="nav-toggle" id="nav-toggle">
             <span class="bar"></span>
             <span class="bar"></span>
@@ -1112,6 +1129,38 @@
       function updateAnalytics() {
         loadAnalytics();
       }
-    </script>
+    </script><script>
+document.addEventListener("DOMContentLoaded", function () {
+  const toggle = document.getElementById("themeToggle");
+
+  if (!toggle) return;
+
+  // Load saved theme
+  if (localStorage.getItem("theme") === "light") {
+    document.body.classList.add("light-mode");
+    toggle.innerHTML = '<i class="fas fa-sun"></i>';
+  }
+
+  toggle.addEventListener("click", function () {
+    document.body.classList.toggle("light-mode");
+
+    if (document.body.classList.contains("light-mode")) {
+      localStorage.setItem("theme", "light");
+      toggle.innerHTML = '<i class="fas fa-sun"></i>';
+    } else {
+      localStorage.setItem("theme", "dark");
+      toggle.innerHTML = '<i class="fas fa-moon"></i>';
+    }
+
+    // Recreate charts to apply new colors
+    if (trendChart) trendChart.destroy();
+    if (categoryChart) categoryChart.destroy();
+    if (monthlyChart) monthlyChart.destroy();
+    if (dayChart) dayChart.destroy();
+
+    loadAnalytics();
+  });
+});
+</script>
 </body>
 </html>
